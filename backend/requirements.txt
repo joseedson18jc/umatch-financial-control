@@ -5,6 +5,7 @@ openpyxl
 python-multipart
 pydantic
 openai
+anthropic
 python-jose[cryptography]
 passlib[bcrypt]
 python-dotenv

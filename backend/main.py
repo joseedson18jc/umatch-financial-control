@@ -593,6 +593,141 @@ def apply_mapping_suggestions(suggestions: List[MappingItem] = Body(...), curren
         save_data()
     return {"added": added, "total_mappings": len(current_mappings)}
 
+# ---------------------------------------------------------------------------
+# AI Table Parser Endpoints (Anthropic Claude)
+# ---------------------------------------------------------------------------
+
+@app.post("/api/ai/analyze-csv")
+async def analyze_csv_with_ai(
+    payload: dict = Body(...),
+    current_user: dict = Depends(get_current_user)
+):
+    """
+    Analyze CSV structure using AI to detect column mappings.
+    
+    Request body:
+        {
+            "csv_sample": "First 20-50 rows of CSV as string",
+            "api_key": "Anthropic API key (optional, uses env var if not provided)"
+        }
+    """
+    from ai_table_parser import analyze_csv_structure
+    
+    csv_sample = payload.get("csv_sample", "")
+    api_key = payload.get("api_key")
+    
+    if not csv_sample:
+        raise HTTPException(status_code=400, detail="csv_sample is required")
+    
+    result = analyze_csv_structure(csv_sample, api_key)
+    return result
+
+
+@app.post("/api/ai/suggest-mappings")
+async def ai_suggest_mappings(
+    payload: dict = Body(...),
+    current_user: dict = Depends(get_current_user)
+):
+    """
+    Get AI-powered mapping suggestions for unmapped transactions.
+    
+    Request body:
+        {
+            "api_key": "Anthropic API key (optional)"
+        }
+    """
+    from ai_table_parser import suggest_category_mappings
+    
+    global current_df, current_mappings
+    
+    if current_df is None:
+        load_data()
+    
+    if current_df is None or current_df.empty:
+        raise HTTPException(status_code=404, detail="No data loaded")
+    
+    api_key = payload.get("api_key")
+    
+    # Get unmapped transactions sample
+    from logic import get_unmapped_diagnostics
+    diagnostics = get_unmapped_diagnostics(current_df, current_mappings)
+    
+    # Build transaction samples from unmapped data
+    unmapped_sample = []
+    for item in diagnostics.get("by_supplier", [])[:20]:
+        unmapped_sample.append({
+            "fornecedor": item.get("name", ""),
+            "valor": item.get("amount", 0)
+        })
+    
+    # Get existing mappings as dicts
+    existing = [m.model_dump() for m in current_mappings]
+    
+    suggestions = suggest_category_mappings(unmapped_sample, existing, api_key)
+    
+    return {"suggestions": suggestions, "unmapped_count": diagnostics.get("total_unmapped_count", 0)}
+
+
+@app.post("/api/ai/smart-upload")
+async def smart_upload_with_ai(
+    payload: dict = Body(...),
+    current_user: dict = Depends(get_current_user)
+):
+    """
+    Upload CSV with AI-assisted format detection and column mapping.
+    
+    Request body:
+        {
+            "file": "base64-encoded CSV content",
+            "api_key": "Anthropic API key (optional)"
+        }
+    """
+    global current_df
+    import base64
+    from ai_table_parser import detect_csv_format, analyze_csv_structure
+    
+    file_b64 = payload.get("file")
+    api_key = payload.get("api_key")
+    
+    if not file_b64:
+        raise HTTPException(status_code=400, detail="Missing 'file' in request body")
+    
+    try:
+        content = base64.b64decode(file_b64)
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid base64 encoding")
+    
+    # Use AI to detect format
+    encoding, separator, date_format = detect_csv_format(content, api_key)
+    
+    # Get sample for analysis
+    try:
+        sample = content.decode(encoding)[:3000]
+    except:
+        sample = content.decode('latin-1', errors='ignore')[:3000]
+    
+    # Analyze structure
+    analysis = {}
+    if api_key:
+        analysis = analyze_csv_structure(sample, api_key)
+    
+    # Process with standard upload
+    try:
+        current_df = process_upload(content)
+        save_data()
+        
+        return {
+            "message": "File processed successfully with AI assistance",
+            "rows": len(current_df),
+            "detected_format": analysis.get("detected_format", "Unknown"),
+            "column_mappings": analysis.get("column_mappings", {}),
+            "suggestions": analysis.get("suggestions", []),
+            "encoding": encoding,
+            "separator": separator
+        }
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
 # Serve the built frontend (Vite) from the dist folder
 from fastapi.responses import FileResponse, HTMLResponse
 
