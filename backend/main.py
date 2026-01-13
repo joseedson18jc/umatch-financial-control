@@ -42,15 +42,18 @@ except ImportError:
 import os
 import json
 import pickle
+import logging
 from pathlib import Path
 from datetime import datetime
+
+# Configure logging
+logger = logging.getLogger(__name__)
 
 # Load environment variables
 load_dotenv()
 
 app = FastAPI()
 
-# Configure CORS
 # Configure CORS
 origins = [
     "http://localhost:5173",
@@ -145,7 +148,7 @@ def save_data():
             
         return True
     except Exception as e:
-        print(f"Error saving data: {e}")
+        logger.error(f"Error saving data: {e}")
         return False
 
 def load_data():
@@ -161,29 +164,29 @@ def load_data():
             # Clean columns of loaded data to match new logic
             if current_df is not None:
                 current_df.columns = [c.strip() for c in current_df.columns]
-                print(f"✅ Loaded data: {len(current_df)} rows (Columns cleaned)")
+                logger.info(f"✅ Loaded data: {len(current_df)} rows (Columns cleaned)")
         
         # Load mappings
         if MAPPINGS_PATH.exists():
             with open(MAPPINGS_PATH, 'r') as f:
                 mappings_dict = json.load(f)
                 current_mappings = [MappingItem(**m) for m in mappings_dict]
-            print(f"✅ Loaded {len(current_mappings)} mappings")
+            logger.info(f"✅ Loaded {len(current_mappings)} mappings")
             
         # Load overrides
         if OVERRIDES_PATH.exists():
             with open(OVERRIDES_PATH, 'r') as f:
                 current_overrides = json.load(f)
-            print(f"✅ Loaded overrides for {len(current_overrides)} lines")
+            logger.info(f"✅ Loaded overrides for {len(current_overrides)} lines")
         
         # Load metadata
         if METADATA_PATH.exists():
             with open(METADATA_PATH, 'r') as f:
                 metadata = json.load(f)
-            print(f"✅ Last upload: {metadata.get('last_upload', 'Unknown')}")
+            logger.info(f"✅ Last upload: {metadata.get('last_upload', 'Unknown')}")
                 
     except Exception as e:
-        print(f"⚠️ Error loading data: {e}")
+        logger.warning(f"⚠️ Error loading data: {e}")
         current_df = None
         current_mappings = get_initial_mappings()
         current_overrides = {}
@@ -318,7 +321,7 @@ def get_pnl(
     
     # Lazy load if data is missing but might exist on disk
     if current_df is None:
-        print("⚠️ Data missing in memory, attempting lazy load...")
+        logger.warning("⚠️ Data missing in memory, attempting lazy load...")
         load_data()
         
     if current_df is None or current_df.empty:
@@ -377,7 +380,7 @@ def get_pnl_line_transactions(
             else:  # Could be Period object comparison
                 filtered_df = filtered_df[filtered_df['Mes_Competencia'] == month]
         except Exception as e:
-            print(f"Month filter error: {e}")
+            logger.warning(f"Month filter error: {e}")
     
     # Apply Centro de Custo filter
     if line_mapping.centro_custo:
@@ -489,7 +492,7 @@ def get_ai_insights(request: dict, current_user: dict = Depends(get_current_user
         insights = generate_insights(data, api_key)
         return {"insights": insights}
     except Exception as e:
-        print(f"Error in /api/insights: {e}")
+        logger.error(f"Error in /api/insights: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/dashboard", response_model=DashboardData)
@@ -592,7 +595,6 @@ def apply_mapping_suggestions(suggestions: List[MappingItem] = Body(...), curren
 
 # Serve the built frontend (Vite) from the dist folder
 from fastapi.responses import FileResponse, HTMLResponse
-import os
 
 # Resolve the absolute path to the frontend build output
 # In Docker: /app/frontend/dist, Local: ../frontend/dist
@@ -601,10 +603,10 @@ if not os.path.exists(frontend_dist_path):
     # Fallback for local development
     frontend_dist_path = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "frontend", "dist"))
 
-print(f"🔍 Looking for frontend build at: {frontend_dist_path}")
-print(f"📁 Frontend build exists: {os.path.exists(frontend_dist_path)}")
+logger.info(f"🔍 Looking for frontend build at: {frontend_dist_path}")
+logger.info(f"📁 Frontend build exists: {os.path.exists(frontend_dist_path)}")
 if os.path.exists(frontend_dist_path):
-    print(f"📄 Frontend build contents: {os.listdir(frontend_dist_path)}")
+    logger.info(f"📄 Frontend build contents: {os.listdir(frontend_dist_path)}")
 
 @app.get("/api/health")
 def health_check():

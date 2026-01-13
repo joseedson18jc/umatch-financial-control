@@ -34,12 +34,13 @@ except ImportError:
                 raise JWTError(str(e))
 
     jwt = _DummyJWT()
+import os
 from fastapi import Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
 from pydantic import BaseModel
 
 # Configuration
-SECRET_KEY = "your-secret-key-keep-it-secret" # In production, use env var
+SECRET_KEY = os.getenv("SECRET_KEY", "development-secret-key-change-in-production")
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 30
 

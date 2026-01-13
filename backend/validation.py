@@ -67,7 +67,8 @@ def validate_dashboard_pnl_consistency(
     # Validate Gross Margin calculation
     gross_profit = find_value('lucro bruto')
     if dash_revenue > 0:
-        expected_margin = (gross_profit / dash_revenue) * 100
+        # Note: gross_margin KPI is already a ratio (0-1), not a percentage
+        expected_margin = gross_profit / dash_revenue
         actual_margin = dashboard_data['kpis']['gross_margin']
         
         if abs(expected_margin - actual_margin) > 0.01:

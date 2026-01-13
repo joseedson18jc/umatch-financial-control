@@ -9,6 +9,7 @@ class MappingItem(BaseModel):
     tipo: str
     ativo: str
     observacoes: Optional[str] = None
+    descricao: Optional[str] = None  # Used for line description in P&L transactions
 
 class MappingUpdate(BaseModel):
     mappings: List[MappingItem]
