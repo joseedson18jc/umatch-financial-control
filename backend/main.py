@@ -871,6 +871,183 @@ async def analyze_csv_v13_endpoint(
     }
 
 
+# ---------------------------------------------------------------------------
+# Conta Azul Specific Endpoints
+# ---------------------------------------------------------------------------
+
+@app.get("/api/conta-azul/config")
+async def get_conta_azul_config(current_user: dict = Depends(get_current_user)):
+    """Get Conta Azul CSV configuration and format details."""
+    from conta_azul_config import CONTA_AZUL_CONFIG, get_mapping_rules_summary
+    
+    return {
+        "config": CONTA_AZUL_CONFIG,
+        "mapping_summary": get_mapping_rules_summary()
+    }
+
+
+@app.get("/api/conta-azul/mappings")
+async def get_conta_azul_mappings(current_user: dict = Depends(get_current_user)):
+    """Get all 33 P&L mapping rules."""
+    from conta_azul_config import CONTA_AZUL_MAPPING_RULES, FINANCIAL_GROUPS
+    from dataclasses import asdict
+    
+    return {
+        "total_rules": len(CONTA_AZUL_MAPPING_RULES),
+        "rules": [asdict(r) for r in CONTA_AZUL_MAPPING_RULES],
+        "financial_groups": {k: asdict(v) for k, v in FINANCIAL_GROUPS.items()}
+    }
+
+
+@app.post("/api/conta-azul/classify")
+async def classify_transaction_endpoint(
+    payload: dict = Body(...),
+    current_user: dict = Depends(get_current_user)
+):
+    """
+    Classify a transaction using Conta Azul mapping rules.
+    
+    Request body:
+        {
+            "cost_center": "Google Play Net Revenue",
+            "supplier": "Google Brasil Pagamentos LTDA",
+            "amount": 1000.00
+        }
+    """
+    from conta_azul_config import classify_transaction
+    
+    cost_center = payload.get("cost_center", "")
+    supplier = payload.get("supplier", "")
+    amount = payload.get("amount", 0.0)
+    
+    classification = classify_transaction(cost_center, supplier, amount)
+    
+    return classification
+
+
+@app.post("/api/conta-azul/import")
+async def import_conta_azul_csv(
+    payload: dict = Body(...),
+    current_user: dict = Depends(get_current_user)
+):
+    """
+    Import Conta Azul CSV with pre-configured template.
+    
+    Request body:
+        {
+            "file": "base64-encoded CSV content",
+            "apply_mappings": true  // Apply P&L mappings
+        }
+    """
+    global current_df
+    import base64
+    from conta_azul_config import (
+        generate_conta_azul_plan, 
+        classify_transaction,
+        CONTA_AZUL_CONFIG
+    )
+    from csv_normalizer_v13 import (
+        extract_csv_metadata,
+        transform_csv,
+        check_quality,
+        deduplicate,
+        NormalizationPlanV13
+    )
+    from dataclasses import asdict
+    
+    file_b64 = payload.get("file")
+    apply_mappings = payload.get("apply_mappings", True)
+    
+    if not file_b64:
+        raise HTTPException(status_code=400, detail="Missing 'file' in request body")
+    
+    try:
+        content = base64.b64decode(file_b64)
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid base64 encoding")
+    
+    # Extract metadata
+    metadata = extract_csv_metadata(content)
+    
+    # Check if it looks like Conta Azul format
+    expected_cols = set(c.lower() for c in CONTA_AZUL_CONFIG["expected_columns"])
+    actual_cols = set(c.lower() for c in metadata["columns"])
+    match_ratio = len(expected_cols & actual_cols) / len(expected_cols) if expected_cols else 0
+    
+    # Generate Conta Azul plan
+    plan_dict = generate_conta_azul_plan()
+    
+    # Convert to NormalizationPlanV13
+    plan = NormalizationPlanV13(
+        schema_version=plan_dict["schema_version"],
+        needs_user_review=plan_dict["needs_user_review"],
+        confidence=plan_dict["confidence"] if match_ratio > 0.7 else 0.5,
+        summary=plan_dict["summary"],
+        template_fingerprint=plan_dict["template_fingerprint"],
+        csv_read={**plan_dict["csv_read"], "delimiter": metadata["delimiter"]},
+        mapping=plan_dict["mapping"],
+        transform_plan=plan_dict["transform_plan"],
+        quality_checks=[],
+        duplicate_detection=plan_dict["duplicate_detection"],
+        warnings=[] if match_ratio > 0.7 else ["Column match low - may not be Conta Azul format"]
+    )
+    
+    # Transform CSV
+    transactions = transform_csv(content, plan)
+    
+    # Apply P&L mappings if requested
+    classified_transactions = []
+    unmapped_count = 0
+    
+    for tx in transactions:
+        tx_dict = asdict(tx)
+        
+        if apply_mappings:
+            # Get cost_center and supplier from original row if available
+            # For now, use category and description as fallback
+            cost_center = tx_dict.get("cost_center", tx_dict.get("category", ""))
+            supplier = tx_dict.get("supplier", "")
+            
+            classification = classify_transaction(cost_center, supplier, tx.amount)
+            tx_dict["classification"] = classification
+            
+            if not classification["mapped"]:
+                unmapped_count += 1
+        
+        classified_transactions.append(tx_dict)
+    
+    # Quality check
+    quality = check_quality(transactions, [])
+    
+    # Deduplicate
+    unique_txs, dup_count = deduplicate(transactions)
+    
+    # Also update current_df for compatibility
+    try:
+        current_df = process_upload(content)
+        save_data()
+    except Exception as e:
+        logger.warning(f"Standard upload failed: {e}")
+    
+    return {
+        "success": True,
+        "pipeline": "conta_azul_v1",
+        "format_match": f"{match_ratio:.0%}",
+        "total_rows": len(transactions),
+        "unique_rows": len(unique_txs),
+        "duplicates_removed": dup_count,
+        "mapped_count": len(transactions) - unmapped_count,
+        "unmapped_count": unmapped_count,
+        "quality_score": f"{quality.get('overall_quality', 0):.1%}",
+        "transactions": classified_transactions[:20],  # First 20 for preview
+        "plan_summary": {
+            "confidence": plan.confidence,
+            "template": plan.template_fingerprint.get("recommended_template_name"),
+            "warnings": plan.warnings
+        }
+    }
+
+
 # Serve the built frontend (Vite) from the dist folder
 from fastapi.responses import FileResponse, HTMLResponse
 
