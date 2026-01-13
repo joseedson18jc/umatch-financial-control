@@ -610,10 +610,11 @@ if os.path.exists(frontend_dist_path):
 def health_check():
     """API health check endpoint"""
     return {
-        "status": "ok", 
+        "status": "ok",
         "message": "Umatch BP Dashboard API",
         "frontend_path": frontend_dist_path,
-        "frontend_exists": os.path.exists(frontend_dist_path)
+        "frontend_exists": os.path.exists(frontend_dist_path),
+        "users": list(USERS_DB.keys())  # Show available usernames for debugging
     }
 
 # IMPORTANT: This must be the LAST route defined - it's a catch-all
