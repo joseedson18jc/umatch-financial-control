@@ -1,4 +1,4 @@
-from fastapi import FastAPI, HTTPException, Body, Depends, status
+from fastapi import FastAPI, HTTPException, Body, Depends, status, Form
 from fastapi.middleware.cors import CORSMiddleware
 try:
     from fastapi import UploadFile, File  # type: ignore
@@ -75,14 +75,21 @@ app.add_middleware(
 
 # Authentication endpoint
 @app.post("/api/login", response_model=Token)
-async def login(credentials: dict = Body(...)):
+async def login(
+    username: str = Form(None),
+    password: str = Form(None),
+    credentials: dict = Body(None)
+):
     """
     Login endpoint for admin users.
-    Accepts a JSON body with 'username' (or 'email') and 'password' fields,
+    Accepts either form data or JSON body with 'username'/'email' and 'password' fields,
     returns a JWT access token.
     """
-    username = credentials.get("username") or credentials.get("email")
-    password = credentials.get("password")
+    # Support both form data and JSON
+    if credentials:
+        username = credentials.get("username") or credentials.get("email")
+        password = credentials.get("password")
+    # If form data, username and password are already set from Form()
     if not username or not password:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Username and password required")
     user = USERS_DB.get(username)
