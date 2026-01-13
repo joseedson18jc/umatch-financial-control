@@ -1,0 +1,130 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --glass-border: rgba(255, 255, 255, 0.08);
+  --glass-surface: rgba(15, 23, 42, 0.6);
+  --glass-highlight: rgba(255, 255, 255, 0.05);
+  --primary-glow: rgba(6, 182, 212, 0.5);
+}
+
+@layer base {
+  body {
+    @apply bg-[#050b14] text-slate-200 antialiased selection:bg-cyan-500/30 selection:text-cyan-100;
+    font-family: 'Inter', system-ui, sans-serif;
+    /* Deep Nebula Gradient - Darker and richer */
+    background-image:
+      radial-gradient(circle at 10% 20%, rgba(76, 29, 149, 0.12) 0%, transparent 40%),
+      radial-gradient(circle at 90% 80%, rgba(6, 182, 212, 0.1) 0%, transparent 40%),
+      radial-gradient(circle at 50% 50%, rgba(15, 23, 42, 1) 0%, transparent 100%);
+    background-attachment: fixed;
+  }
+}
+
+@layer components {
+
+  /* Premium Glass Effect */
+  .glass-panel {
+    @apply relative overflow-hidden backdrop-blur-xl border border-white/[0.08] bg-[#0f172a]/40 shadow-2xl;
+    box-shadow:
+      0 0 0 1px rgba(255, 255, 255, 0.03) inset,
+      0 20px 40px -20px rgba(0, 0, 0, 0.5);
+  }
+
+  .glass-heavy {
+    @apply backdrop-blur-2xl bg-[#0f172a]/80 border border-white/[0.06];
+  }
+
+  /* Interactive Cards */
+  .liquid-glass {
+    @apply glass-panel rounded-2xl transition-all duration-300 ease-out;
+  }
+
+  .liquid-glass:hover {
+    @apply border-white/[0.12] -translate-y-1;
+    background: linear-gradient(145deg, rgba(255, 255, 255, 0.03) 0%, rgba(255, 255, 255, 0.01) 100%);
+    box-shadow: 0 20px 40px -10px rgba(6, 182, 212, 0.1);
+  }
+
+  /* Form Elements */
+  .glass-input {
+    @apply w-full bg-[#0f172a]/50 border border-white/10 rounded-xl px-4 py-3 text-white placeholder:text-slate-500 focus:outline-none focus:border-cyan-500/50 focus:ring-4 focus:ring-cyan-500/10 transition-all duration-300 backdrop-blur-sm;
+  }
+
+  /* Buttons */
+  .btn-primary {
+    @apply relative overflow-hidden rounded-xl bg-gradient-to-r from-cyan-600 to-blue-600 px-6 py-2.5 text-sm font-semibold text-white shadow-lg shadow-cyan-500/20 transition-all duration-300 hover:shadow-cyan-500/40 hover:scale-[1.02] active:scale-[0.98] border border-white/10;
+  }
+
+  .btn-secondary {
+    @apply rounded-xl border border-white/10 bg-white/[0.02] px-6 py-2.5 text-sm font-medium text-slate-300 shadow-sm transition-all duration-300 hover:bg-white/[0.08] hover:text-white hover:border-white/20 active:scale-[0.98];
+  }
+
+  .btn-danger {
+    @apply rounded-xl border border-red-500/20 bg-red-500/10 px-6 py-2.5 text-sm font-medium text-red-400 transition-all duration-300 hover:bg-red-500/20 hover:border-red-500/30 hover:shadow-lg hover:shadow-red-500/10 active:scale-[0.98];
+  }
+}
+
+/* Custom Scrollbar */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  @apply bg-slate-700/50 rounded-full hover:bg-cyan-500/50 transition-colors cursor-pointer;
+}
+
+/* Animations */
+@keyframes glow {
+
+  0%,
+  100% {
+    box-shadow: 0 0 20px -5px var(--primary-glow);
+  }
+
+  50% {
+    box-shadow: 0 0 30px 0px var(--primary-glow);
+  }
+}
+
+.animate-glow {
+  animation: glow 3s ease-in-out infinite;
+}
+
+/* Utilities */
+@layer utilities {
+  .text-glow {
+    text-shadow: 0 0 20px rgba(6, 182, 212, 0.5);
+  }
+
+  .min-h-screen-safe {
+    min-height: 100vh;
+    min-height: -webkit-fill-available;
+  }
+
+  .scrollbar-none {
+    scrollbar-width: none;
+    -ms-overflow-style: none;
+  }
+
+  .scrollbar-none::-webkit-scrollbar {
+    display: none;
+  }
+}
+
+/* Safe Area Support */
+@supports (padding-top: env(safe-area-inset-top)) {
+  .safe-area-pt {
+    padding-top: env(safe-area-inset-top);
+  }
+
+  .safe-area-pb {
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+}
