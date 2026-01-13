@@ -54,21 +54,17 @@ def hash_password(password: str) -> str:
     return hashlib.sha256(password.encode()).hexdigest()
 
 USERS_DB = {
-    "josemercadogc18@gmail.com": {
-        "password_hash": "548b26cdbb8547e104c335a8cf50865f18a6a0a806d3dc06f4d4ba70216fd42a", # Hash of fxdxudu18!
-        "name": "Jose Mercado"
-    },
-    "matheuscastrocorrea@gmail.com": {
-        "password_hash": "069f57dae98079b842a956e41d081e76487591a2ad65fa7a450717c1ab19767f", # Hash of 123456!
-        "name": "Matheus Castro"
-    },
-    "jc@juicyscore.ai": {
-        "password_hash": "06b8d0bd9f7f33fa0e46ad56186ed2fd9425e9c5aa808ea2b4be0293e6edb953", # Hash of 654321!
-        "name": "JC"
-    },
     "admin": {
-        "password_hash": "8c6976e5b5410415bde908bd4dee15dfb167a9c873fc4bb8a81f6f2ab448a918", # Hash of admin
+        "password_hash": "8c6976e5b5410415bde908bd4dee15dfb167a9c873fc4bb8a81f6f2ab448a918", # admin
         "name": "Admin User"
+    },
+    "test": {
+        "password_hash": "9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08", # test
+        "name": "Test User"
+    },
+    "demo": {
+        "password_hash": "2a97516c354b68848cdbd8f54a226a0a55b21ed138e207ad6c5cbb9c00aa5aea", # demo
+        "name": "Demo User"
     }
 }
 
