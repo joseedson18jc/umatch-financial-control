@@ -1,10 +1,9 @@
 import { useState } from 'react';
-import { LayoutDashboard, Upload, FileSpreadsheet, Settings, LogOut, Menu, Globe, X } from 'lucide-react';
+import { LayoutDashboard, Upload, FileSpreadsheet, Settings, Menu, Globe, X } from 'lucide-react';
 import FileUpload from './components/FileUpload';
 import Dashboard from './components/Dashboard';
 import PnLTable from './components/PnLTable';
 import MappingManager from './components/MappingManager';
-import Login from './components/Login';
 import { motion, AnimatePresence } from 'framer-motion';
 
 const translations = {
@@ -95,22 +94,8 @@ function App() {
   const [activeTab, setActiveTab] = useState<'upload' | 'dashboard' | 'pnl' | 'mappings'>('upload');
   const [language, setLanguage] = useState<'pt' | 'en'>('pt');
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
-  const [isAuthenticated, setIsAuthenticated] = useState(() => !!localStorage.getItem('token'));
 
-  const handleLogin = (token: string) => {
-    localStorage.setItem('token', token);
-    setIsAuthenticated(true);
-  };
-
-  const handleLogout = () => {
-    localStorage.removeItem('token');
-    setIsAuthenticated(false);
-    // window.location.reload(); // Not strictly needed if state updates
-  };
-
-  if (!isAuthenticated) {
-    return <Login onLogin={handleLogin} />;
-  }
+  // AUTHENTICATION REMOVED - Direct access
 
   const t = translations[language];
 
@@ -175,15 +160,6 @@ function App() {
             <NavItem id="mappings" label={t.nav.mappings} icon={Settings} activeTab={activeTab} onClick={(id) => { setActiveTab(id as 'upload' | 'dashboard' | 'pnl' | 'mappings'); setIsSidebarOpen(false); }} />
           </nav>
 
-          <div className="p-4 border-t border-white/5">
-            <button
-              onClick={handleLogout}
-              className="w-full flex items-center gap-3 px-4 py-3 rounded-xl text-red-400 hover:bg-red-500/10 hover:text-red-300 transition-all duration-200 group"
-            >
-              <LogOut size={20} className="group-hover:scale-110 transition-transform" />
-              <span className="font-medium">Logout</span>
-            </button>
-          </div>
         </div>
       </aside>
 
