@@ -587,8 +587,12 @@ def apply_mapping_suggestions(suggestions: List[MappingItem] = Body(...), curren
 from fastapi.responses import FileResponse, HTMLResponse
 import os
 
-# Resolve the absolute path to the frontend build output (../frontend/dist)
-frontend_dist_path = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "frontend", "dist"))
+# Resolve the absolute path to the frontend build output
+# In Docker: /app/frontend/dist, Local: ../frontend/dist
+frontend_dist_path = os.path.abspath(os.path.join(os.path.dirname(__file__), "frontend", "dist"))
+if not os.path.exists(frontend_dist_path):
+    # Fallback for local development
+    frontend_dist_path = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "frontend", "dist"))
 
 print(f"🔍 Looking for frontend build at: {frontend_dist_path}")
 print(f"📁 Frontend build exists: {os.path.exists(frontend_dist_path)}")

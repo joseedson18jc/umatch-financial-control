@@ -1,36 +1,18 @@
 services:
-  # Backend Service (Python/FastAPI)
+  # Unified Backend + Frontend Service
   - type: web
-    name: financial-control-backend
+    name: umatch-financial-control
     runtime: docker
-    rootDir: backend
     plan: free
     dockerfilePath: ./Dockerfile
     envVars:
-      - key: FRONTEND_URL
-        fromService:
-          type: web
-          name: financial-control-frontend
-          property: url
-      - key: PYTHON_VERSION
-        value: 3.11.0
       - key: PORT
         value: 8000
+      - key: SECRET_KEY
+        value: umatch-secret-key-change-in-production-12345
+      - key: PYTHON_VERSION
+        value: 3.9
     disk:
       name: data-storage
       mountPath: /app/data
       sizeGB: 1
-
-  # Frontend Service (React/Vite)
-  - type: web
-    name: financial-control-frontend
-    runtime: static
-    rootDir: frontend
-    buildCommand: npm install && npm run build
-    staticPublishPath: ./dist
-    envVars:
-      - key: VITE_API_URL
-        fromService:
-          type: web
-          name: financial-control-backend
-          property: url
