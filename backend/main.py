@@ -728,6 +728,149 @@ async def smart_upload_with_ai(
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
 
+
+@app.post("/api/ai/import-v13")
+async def import_csv_v13_endpoint(
+    payload: dict = Body(...),
+    current_user: dict = Depends(get_current_user)
+):
+    """
+    Import CSV using v1.3 normalization pipeline with Claude AI.
+    
+    This implements the full 6-phase pipeline:
+    1. Extraction & Detection
+    2. Plan Generation (AI with structured outputs)
+    3. Validation (JSON Schema + semantic)
+    4. Transformation (deterministic)
+    5. Quality & Deduplication
+    6. Import & Persistence
+    
+    Request body:
+        {
+            "file": "base64-encoded CSV content",
+            "api_key": "Anthropic API key (optional)",
+            "skip_ai": false,  // Use heuristics only
+            "debug": false     // Include debug info
+        }
+    """
+    global current_df
+    import base64
+    from csv_normalizer_v13 import (
+        import_csv_v13,
+        extract_csv_metadata,
+        get_plan_summary,
+        generate_normalization_plan_v13,
+        transform_csv,
+        export_transactions_to_dict
+    )
+    from dataclasses import asdict
+    
+    file_b64 = payload.get("file")
+    api_key = payload.get("api_key")
+    skip_ai = payload.get("skip_ai", False)
+    debug = payload.get("debug", False)
+    
+    if not file_b64:
+        raise HTTPException(status_code=400, detail="Missing 'file' in request body")
+    
+    try:
+        content = base64.b64decode(file_b64)
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid base64 encoding")
+    
+    # Run v1.3 import pipeline
+    result = await import_csv_v13(content, api_key, skip_ai, debug)
+    
+    # Also process with standard upload to keep current_df in sync
+    if result.success:
+        try:
+            current_df = process_upload(content)
+            save_data()
+        except Exception as e:
+            logger.warning(f"Standard upload failed, but v1.3 succeeded: {e}")
+    
+    # Get plan summary for response
+    if result.success and not skip_ai:
+        plan = await generate_normalization_plan_v13(content, api_key, debug)
+        plan_summary = get_plan_summary(plan)
+    else:
+        plan_summary = {}
+    
+    return {
+        "success": result.success,
+        "pipeline_version": "1.3",
+        "total_rows": result.total_rows,
+        "imported_rows": result.imported_rows,
+        "duplicates_removed": result.duplicates_removed,
+        "quality_score": f"{result.quality_score:.1%}",
+        "plan_id": result.plan_id,
+        "plan_summary": plan_summary,
+        "errors": result.errors,
+        "warnings": result.warnings
+    }
+
+
+@app.post("/api/ai/analyze-v13")
+async def analyze_csv_v13_endpoint(
+    payload: dict = Body(...),
+    current_user: dict = Depends(get_current_user)
+):
+    """
+    Analyze CSV and generate v1.3 normalization plan without importing.
+    
+    Request body:
+        {
+            "file": "base64-encoded CSV content",
+            "api_key": "Anthropic API key (optional)",
+            "debug": true  // Include column profiles
+        }
+    """
+    import base64
+    from csv_normalizer_v13 import (
+        extract_csv_metadata,
+        generate_normalization_plan_v13,
+        get_plan_summary,
+        validate_plan_v13
+    )
+    from dataclasses import asdict
+    
+    file_b64 = payload.get("file")
+    api_key = payload.get("api_key")
+    debug = payload.get("debug", True)
+    
+    if not file_b64:
+        raise HTTPException(status_code=400, detail="Missing 'file' in request body")
+    
+    try:
+        content = base64.b64decode(file_b64)
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid base64 encoding")
+    
+    # Extract metadata
+    metadata = extract_csv_metadata(content)
+    
+    # Generate plan
+    plan = await generate_normalization_plan_v13(content, api_key, debug)
+    
+    # Validate
+    is_valid, validation_errors = validate_plan_v13(plan, metadata)
+    
+    return {
+        "pipeline_version": "1.3",
+        "metadata": {
+            "encoding": metadata["encoding"],
+            "delimiter": metadata["delimiter"],
+            "has_header": metadata["has_header"],
+            "columns": metadata["columns"],
+            "row_count": metadata["row_count"]
+        },
+        "plan": get_plan_summary(plan),
+        "plan_valid": is_valid,
+        "validation_errors": validation_errors,
+        "sample_rows": metadata["sample_rows"][:5]
+    }
+
+
 # Serve the built frontend (Vite) from the dist folder
 from fastapi.responses import FileResponse, HTMLResponse
 
