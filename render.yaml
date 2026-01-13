@@ -12,7 +12,3 @@ services:
         value: umatch-secret-key-change-in-production-12345
       - key: PYTHON_VERSION
         value: 3.9
-    disk:
-      name: data-storage
-      mountPath: /app/data
-      sizeGB: 1
