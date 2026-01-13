@@ -51,17 +51,27 @@ class QualityCheck(TypedDict):
 
 @dataclass
 class NormalizationPlanV13:
-    """v1.3 Normalization Plan Structure"""
+    """v1.3 Normalization Plan Structure - Full Schema"""
+    # CORE (Mandatory)
     schema_version: str = "1.3"
+    needs_user_review: bool = False
     confidence: float = 0.0
     summary: Dict[str, Any] = field(default_factory=dict)
+    template_fingerprint: Dict[str, Any] = field(default_factory=dict)
+    privacy: Dict[str, Any] = field(default_factory=dict)
     csv_read: Dict[str, Any] = field(default_factory=dict)
+    input_profile: Dict[str, Any] = field(default_factory=dict)
     mapping: Dict[str, ColumnMapping] = field(default_factory=dict)
     transform_plan: List[TransformOperation] = field(default_factory=list)
     quality_checks: List[QualityCheck] = field(default_factory=list)
+    duplicate_detection: Dict[str, Any] = field(default_factory=dict)
     warnings: List[str] = field(default_factory=list)
+    
+    # DEBUG (Optional)
     column_profile: Dict[str, Any] = field(default_factory=dict)
     field_detection: Dict[str, Any] = field(default_factory=dict)
+    alternatives: List[Dict[str, Any]] = field(default_factory=list)
+
 
 
 @dataclass
@@ -442,31 +452,78 @@ def _generate_heuristic_plan(metadata: Dict[str, Any]) -> NormalizationPlanV13:
             'thousand': '.'
         }
     mapping['operation_type'] = {'method': 'derive_from_amount_sign'}
+    mapping['currency'] = {'method': 'set_constant', 'value': 'BRL'}
+    
+    # Generate template fingerprint
+    normalized_cols = [c.lower().strip() for c in columns]
+    fingerprint_hash = hashlib.md5('|'.join(normalized_cols).encode()).hexdigest()[:12]
     
     return NormalizationPlanV13(
         schema_version="1.3",
+        needs_user_review=True,  # Heuristic plans need review
         confidence=0.6,
         summary={
             'detected_layout': f"CSV with delimiter '{metadata['delimiter']}'",
             'key_decisions': [f'Date from {date_col}', f'Amount from {amount_col}'],
             'main_risks': ['Heuristic plan - review recommended']
         },
+        template_fingerprint={
+            'basis': {
+                'normalized_columns': normalized_cols,
+                'column_count': len(columns),
+                'delimiter': metadata['delimiter'],
+                'has_header': metadata['has_header']
+            },
+            'hash': fingerprint_hash,
+            'recommended_template_name': 'generic_csv_v1'
+        },
+        privacy={
+            'contains_pii': False,
+            'pii_fields': [],
+            'notes': 'Analysis not performed (heuristic mode)'
+        },
         csv_read={
             'delimiter': metadata['delimiter'],
-            'encoding': metadata['encoding'],
+            'delimiter_candidates': [{'delimiter': metadata['delimiter'], 'score': 0.9}],
+            'encoding_hint': metadata['encoding'],
             'has_header': metadata['has_header'],
+            'header_confidence': metadata.get('header_confidence', 0.5),
+            'quote_char': '"',
+            'escape_char': '\\',
+            'newline_hint': '\\n',
             'skip_rows': 0
+        },
+        input_profile={
+            'columns': columns,
+            'column_count': len(columns),
+            'row_count': metadata['row_count'],
+            'language_hint': 'pt-BR',
+            'detected_types': {}
         },
         mapping=mapping,
         transform_plan=[
+            {'op': 'read_csv', 'args': {'delimiter': metadata['delimiter'], 'has_header': metadata['has_header']}},
             {'op': 'trim', 'source': '*', 'target': '*', 'params': {}},
-            {'op': 'parse_date', 'source': 'date', 'target': 'date', 'params': {'formats': date_formats}},
-            {'op': 'parse_money_ptbr', 'source': 'amount', 'target': 'amount', 'params': {'decimal': ',', 'thousand': '.'}}
+            {'op': 'parse_date', 'source': date_col or 'date', 'target': 'date', 'params': {'formats': date_formats}},
+            {'op': 'parse_money_ptbr', 'source': amount_col or 'amount', 'target': 'amount', 'params': {'decimal': ',', 'thousand': '.'}},
+            {'op': 'derive_from_amount_sign', 'source': 'amount', 'target': 'operation_type', 'params': {}}
         ],
         quality_checks=[
-            {'field': 'date', 'check': 'not_null', 'threshold': 0.95},
-            {'field': 'amount', 'check': 'is_numeric', 'threshold': 0.95}
+            {'field': 'date', 'check': 'not_null', 'threshold': 0.9},
+            {'field': 'amount', 'check': 'is_numeric', 'threshold': 0.9},
+            {'field': 'description', 'check': 'not_empty', 'threshold': 0.9}
         ],
+        duplicate_detection={
+            'strategy': 'hash',
+            'hash_fields': ['date', 'amount', 'description'],
+            'normalization': {
+                'description_normalize_accents': True,
+                'description_lowercase': True,
+                'trim': True,
+                'collapse_whitespace': True
+            },
+            'notes': []
+        },
         warnings=['Generated using heuristics - AI analysis recommended']
     )
 
