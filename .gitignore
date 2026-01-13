@@ -43,6 +43,9 @@ lerna-debug.log*
 dist-ssr
 *.local
 
+# Exception: Keep frontend build for deployment
+!frontend/dist
+
 # Editor directories
 .vscode/
 .idea/
