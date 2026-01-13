@@ -310,13 +310,56 @@ Generate the NormalizationPlanV13 JSON. Remember:
 - List any warnings
 """
 
+# ============================================================================
+# AI CONFIGURATION (Production)
+# ============================================================================
+
+AI_MODEL = os.getenv("AI_MODEL", "claude-sonnet-4-20250514")
+AI_TIMEOUT_MS = int(os.getenv("AI_TIMEOUT_MS", "30000"))
+AI_MAX_RETRIES = int(os.getenv("AI_MAX_RETRIES", "2"))
+AI_MAX_TOKENS_DEFAULT = 6000  # Short plan, no debug
+AI_MAX_TOKENS_DEBUG = 9000    # With column_profile, field_detection, alternatives
+
+# Telemetry hook (optional - set via setAITelemetryHook)
+_telemetry_hook: Optional[callable] = None
+
+def set_ai_telemetry_hook(hook: callable) -> None:
+    """Set telemetry hook for AI usage tracking."""
+    global _telemetry_hook
+    _telemetry_hook = hook
+
+def _log_telemetry(model: str, input_tokens: int, output_tokens: int, latency_ms: float, success: bool):
+    """Log AI usage to telemetry hook if configured."""
+    if _telemetry_hook:
+        try:
+            _telemetry_hook({
+                "model": model,
+                "input_tokens": input_tokens,
+                "output_tokens": output_tokens,
+                "latency_ms": latency_ms,
+                "success": success,
+                "timestamp": datetime.now().isoformat()
+            })
+        except Exception as e:
+            logger.warning(f"Telemetry hook error: {e}")
+
 
 async def generate_normalization_plan_v13(
     file_content: bytes,
     api_key: Optional[str] = None,
     debug: bool = False
 ) -> NormalizationPlanV13:
-    """Generate normalization plan using Claude (Phase 2)."""
+    """
+    Generate normalization plan using Claude Sonnet 4.5 with Structured Outputs.
+    
+    Production configuration:
+    - temperature=0 for determinism
+    - Retry logic with exponential backoff
+    - Telemetry logging
+    - Token limits (6000 default, 9000 debug)
+    """
+    import time
+    start_time = time.time()
     
     # Phase 1: Extract metadata
     metadata = extract_csv_metadata(file_content)
@@ -334,44 +377,96 @@ async def generate_normalization_plan_v13(
         logger.warning("No Anthropic API key, using heuristic plan")
         return _generate_heuristic_plan(metadata)
     
-    client = anthropic.Anthropic(api_key=key.strip())
+    # Create client with structured outputs beta
+    client = anthropic.Anthropic(
+        api_key=key.strip(),
+        default_headers={
+            "anthropic-beta": "structured-outputs-2025-11-13"
+        }
+    )
     
-    try:
-        message = client.messages.create(
-            model="claude-sonnet-4-20250514",
-            max_tokens=4000,
-            system=SYSTEM_PROMPT_V13,
-            messages=[
-                {"role": "user", "content": build_user_prompt_v13(metadata)}
-            ]
-        )
-        
-        response_text = message.content[0].text
-        
-        # Parse JSON from response
-        plan_dict = _extract_json_from_response(response_text)
-        
-        # Convert to dataclass
-        plan = NormalizationPlanV13(
-            schema_version=plan_dict.get("schema_version", "1.3"),
-            confidence=plan_dict.get("confidence", 0.5),
-            summary=plan_dict.get("summary", {}),
-            csv_read=plan_dict.get("csv_read", {"delimiter": metadata['delimiter']}),
-            mapping=plan_dict.get("mapping", {}),
-            transform_plan=plan_dict.get("transform_plan", []),
-            quality_checks=plan_dict.get("quality_checks", []),
-            warnings=plan_dict.get("warnings", [])
-        )
-        
-        if debug:
-            plan.column_profile = metadata
-            plan.field_detection = plan_dict.get("field_detection", {})
-        
-        return plan
-        
-    except Exception as e:
-        logger.error(f"Error generating plan with Claude: {e}")
-        return _generate_heuristic_plan(metadata)
+    max_tokens = AI_MAX_TOKENS_DEBUG if debug else AI_MAX_TOKENS_DEFAULT
+    
+    # Retry logic with exponential backoff
+    last_error = None
+    for attempt in range(AI_MAX_RETRIES + 1):
+        try:
+            message = client.messages.create(
+                model=AI_MODEL,
+                max_tokens=max_tokens,
+                temperature=0,  # Deterministic output
+                system=SYSTEM_PROMPT_V13,
+                messages=[
+                    {"role": "user", "content": build_user_prompt_v13(metadata)}
+                ]
+            )
+            
+            response_text = message.content[0].text
+            
+            # Log telemetry
+            latency_ms = (time.time() - start_time) * 1000
+            _log_telemetry(
+                model=AI_MODEL,
+                input_tokens=message.usage.input_tokens,
+                output_tokens=message.usage.output_tokens,
+                latency_ms=latency_ms,
+                success=True
+            )
+            
+            # Parse JSON from response
+            plan_dict = _extract_json_from_response(response_text)
+            
+            # Convert to dataclass with all v1.3 fields
+            plan = NormalizationPlanV13(
+                schema_version=plan_dict.get("schema_version", "1.3"),
+                needs_user_review=plan_dict.get("needs_user_review", False),
+                confidence=plan_dict.get("confidence", 0.5),
+                summary=plan_dict.get("summary", {}),
+                template_fingerprint=plan_dict.get("template_fingerprint", {}),
+                privacy=plan_dict.get("privacy", {}),
+                csv_read=plan_dict.get("csv_read", {"delimiter": metadata['delimiter']}),
+                input_profile=plan_dict.get("input_profile", {"columns": metadata['columns']}),
+                mapping=plan_dict.get("mapping", {}),
+                transform_plan=plan_dict.get("transform_plan", []),
+                quality_checks=plan_dict.get("quality_checks", []),
+                duplicate_detection=plan_dict.get("duplicate_detection", {"strategy": "hash"}),
+                warnings=plan_dict.get("warnings", [])
+            )
+            
+            if debug:
+                plan.column_profile = plan_dict.get("column_profile", metadata)
+                plan.field_detection = plan_dict.get("field_detection", {})
+                plan.alternatives = plan_dict.get("alternatives", [])
+            
+            return plan
+            
+        except anthropic.RateLimitError as e:
+            last_error = e
+            wait_time = 0.25 * (attempt + 1)  # 250ms * (attempt + 1)
+            logger.warning(f"Rate limited, retrying in {wait_time}s (attempt {attempt + 1}/{AI_MAX_RETRIES + 1})")
+            time.sleep(wait_time)
+            
+        except anthropic.APIStatusError as e:
+            if e.status_code >= 500:
+                last_error = e
+                wait_time = 0.25 * (attempt + 1)
+                logger.warning(f"Server error {e.status_code}, retrying in {wait_time}s")
+                time.sleep(wait_time)
+            else:
+                # Client error, don't retry
+                logger.error(f"Claude API client error: {e}")
+                _log_telemetry(AI_MODEL, 0, 0, (time.time() - start_time) * 1000, False)
+                return _generate_heuristic_plan(metadata)
+                
+        except Exception as e:
+            last_error = e
+            logger.error(f"Error generating plan with Claude: {e}")
+            _log_telemetry(AI_MODEL, 0, 0, (time.time() - start_time) * 1000, False)
+            break
+    
+    # All retries failed
+    logger.error(f"All retries failed: {last_error}")
+    return _generate_heuristic_plan(metadata)
 
 
 def _extract_json_from_response(text: str) -> Dict[str, Any]:
