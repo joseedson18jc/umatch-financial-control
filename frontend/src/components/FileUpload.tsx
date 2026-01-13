@@ -137,6 +137,8 @@ export default function FileUpload({ language }: FileUploadProps) {
                         accept=".csv"
                         onChange={handleFileChange}
                         className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-20"
+                        title="Upload CSV file"
+                        aria-label="Upload CSV file from Conta Azul"
                     />
                     <div className={`
                         relative border-2 border-dashed rounded-2xl p-8 sm:p-12 transition-all duration-300
