@@ -59,11 +59,25 @@ export default function FileUpload({ language }: FileUploadProps) {
         if (!file) return;
 
         setStatus('uploading');
-        const formData = new FormData();
-        formData.append('file', file);
 
         try {
-            const response = await api.post('/upload', formData);
+            // Read file as base64
+            const reader = new FileReader();
+            const base64Promise = new Promise<string>((resolve, reject) => {
+                reader.onload = () => {
+                    const result = reader.result as string;
+                    // Extract base64 content after the data URL prefix
+                    const base64 = result.split(',')[1];
+                    resolve(base64);
+                };
+                reader.onerror = () => reject(reader.error);
+            });
+            reader.readAsDataURL(file);
+
+            const base64Content = await base64Promise;
+
+            // Send as JSON with base64-encoded file
+            const response = await api.post('/upload', { file: base64Content });
             setStatus('success');
             setMessage(`${t.success} (${response.data.rows} records)`);
 
@@ -72,8 +86,8 @@ export default function FileUpload({ language }: FileUploadProps) {
                 window.location.reload();
             }, 1500);
         } catch (error: unknown) {
-            console.error('Error:', error);
             console.error('Upload error:', error);
+            setStatus('error');
 
             // Better error messaging
             if (error instanceof Error) {
