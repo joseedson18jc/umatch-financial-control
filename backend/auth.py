@@ -55,7 +55,7 @@ def hash_password(password: str) -> str:
 
 USERS_DB = {
     "josemercadogc18@gmail.com": {
-        "password_hash": hash_password("fxdxudu18!"),
+        "password_hash": "548b26cdbb8547e104c335a8cf50865f18a6a0a806d3dc06f4d4ba70216fd42a", # Hash of fxdxudu18!
         "name": "Jose Mercado"
     },
     "matheuscastrocorrea@gmail.com": {
@@ -65,6 +65,10 @@ USERS_DB = {
     "jc@juicyscore.ai": {
         "password_hash": "06b8d0bd9f7f33fa0e46ad56186ed2fd9425e9c5aa808ea2b4be0293e6edb953", # Hash of 654321!
         "name": "JC"
+    },
+    "admin": {
+        "password_hash": "8c6976e5b5410415bde908bd4dee15dfb167a9c873fc4bb8a81f6f2ab448a918", # Hash of admin
+        "name": "Admin User"
     }
 }
 
