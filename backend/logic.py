@@ -5,7 +5,9 @@ from datetime import datetime
 import io
 import logging
 import os
-from typing import List, Dict, Any, Optional
+import time
+import functools
+from typing import List, Dict, Any, Optional, Tuple
 from collections import defaultdict
 import unicodedata
 from models import MappingItem, PnLItem, PnLResponse, DashboardData
@@ -13,6 +15,37 @@ from models import MappingItem, PnLItem, PnLResponse, DashboardData
 # Configure logging for financial calculations
 logger = logging.getLogger(__name__)
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+
+
+# ============================================================================
+# PERFORMANCE MONITORING
+# ============================================================================
+
+def timing_decorator(func):
+    """Decorator to log function execution time for performance monitoring."""
+    @functools.wraps(func)
+    def wrapper(*args, **kwargs):
+        start_time = time.perf_counter()
+        result = func(*args, **kwargs)
+        end_time = time.perf_counter()
+        elapsed_ms = (end_time - start_time) * 1000
+        if elapsed_ms > 100:  # Only log if > 100ms
+            logger.info(f"⏱️ {func.__name__} took {elapsed_ms:.1f}ms")
+        return result
+    return wrapper
+
+
+# ============================================================================
+# TEXT NORMALIZATION WITH CACHING
+# ============================================================================
+
+@functools.lru_cache(maxsize=10000)
+def _normalize_text_cached(s: str) -> str:
+    """Cached text normalization - significantly faster for repeated values."""
+    s = s.strip().lower()
+    s = unicodedata.normalize("NFKD", s)
+    return "".join(ch for ch in s if not unicodedata.combining(ch))
+
 
 def process_upload(file_content: bytes) -> pd.DataFrame:
     """
@@ -282,12 +315,10 @@ def get_initial_mappings() -> List[MappingItem]:
 
     return mappings
 def normalize_text_helper(s: Any) -> str:
-    # Helper outside process_upload for use in calculate_pnl
+    """Helper for text normalization with LRU cache for performance."""
     if pd.isna(s):
         return ""
-    s = str(s).strip().lower()
-    s = unicodedata.normalize("NFKD", s)
-    return "".join(ch for ch in s if not unicodedata.combining(ch))
+    return _normalize_text_cached(str(s))
 
 def prepare_mappings(mappings: List[MappingItem]):
     from collections import defaultdict
@@ -499,6 +530,7 @@ def suggest_mappings(df: pd.DataFrame, mappings: List[MappingItem]) -> List[Mapp
 
     return list(suggestions.values())
 
+@timing_decorator
 def calculate_pnl(
     df: pd.DataFrame,
     mappings: List[MappingItem],
@@ -758,6 +790,8 @@ def calculate_pnl(
     add_row(111, "RESULTADO LÍQUIDO", line_values[111], is_total=True, is_header=True)
 
     return PnLResponse(headers=month_strs, rows=rows)
+
+@timing_decorator
 def get_dashboard_data(df: pd.DataFrame, mappings: List[MappingItem], overrides: Dict[str, Dict[str, float]] = None) -> DashboardData:
     """Generate dashboard KPIs and chart-ready series from the current P&L.
 

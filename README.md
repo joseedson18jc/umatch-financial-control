@@ -1,136 +1,60 @@
-# UMatch Financial Control System
+# UMatch Financial Control
 
-A comprehensive financial management system with CSV import, data normalization, P&L analysis, and AI-powered insights.
+A smart financial control system powered by AI for analyzing Conta Azul exports.
 
-## Project Structure
+## Features
 
-```
-.
-├── backend/              # FastAPI Python backend
-│   ├── main.py          # Main application entry point
-│   ├── logic.py         # Business logic and calculations
-│   ├── models.py        # Pydantic data models
-│   ├── auth.py          # Authentication logic
-│   ├── ai_service.py    # AI integration
-│   ├── validation.py    # Data validation
-│   ├── requirements.txt # Python dependencies
-│   └── data/            # Data storage directory
-│
-├── frontend/            # React + TypeScript + Vite frontend
-│   ├── src/            # Source files
-│   ├── public/         # Static assets
-│   ├── dist/           # Built files
-│   └── package.json    # Node dependencies
-│
-├── docs/               # Documentation files
-│   ├── DEPLOY.md
-│   ├── DEPLOYMENT.md
-│   ├── MANUAL_DO_USUARIO.md
-│   └── QUICK_DEPLOY.md
-│
-└── data/              # Sample data files
-    ├── Business_Plan_Umatch_Automatizado_FINAL.xlsx
-    └── Extratodemovimentações-2025-ExtratoFinanceiro.csv
-```
+- 📊 Executive Dashboard with KPIs
+- 🔍 Anomaly Detection
+- 📈 Trend Analysis & Forecasting
+- 📋 DRE (Income Statement)
+- 🛡️ Data Quality Analysis
+- 🤖 AI-powered CSV Import
 
-## Prerequisites
+## Deploy to Render
 
-- Python 3.9+
-- Node.js 18+
-- npm or yarn
+[![Deploy to Render](https://render.com/images/deploy-to-render-button.svg)](https://render.com/deploy?repo=https://github.com/YOUR_USERNAME/umatch-financial)
 
 ## Quick Start
 
-### 1. Backend Setup
+### Local Development
 
 ```bash
+# Backend
 cd backend
-pip3 install -r requirements.txt
-cp ../.env.example .env
-# Edit .env with your configuration
-python3 main.py
-```
+pip install -r requirements.txt
+python -m uvicorn main:app --reload
 
-Backend will run on `http://localhost:8000`
-
-### 2. Frontend Setup
-
-```bash
+# Frontend
 cd frontend
 npm install
 npm run dev
 ```
 
-Frontend will run on `http://localhost:5173`
-
-### 3. Production Build
+### Docker
 
 ```bash
-# Build frontend
-cd frontend
-npm run build
+# Build and run
+docker-compose up -d
 
-# Run backend (serves frontend automatically)
-cd ../backend
-python3 main.py
+# View logs
+docker-compose logs -f
 ```
-
-## Features
-
-- **CSV Import & Normalization**: Import financial data from various formats
-- **P&L Analysis**: Profit & Loss statements with customizable categories
-- **Dashboard**: Interactive financial visualizations
-- **AI Insights**: OpenAI-powered financial analysis (requires API key)
-- **Multi-user Support**: Authentication and user management
-- **Budget Management**: Create and track budgets
-- **Forecasting**: Financial projections based on historical data
 
 ## Environment Variables
 
-See `.env.example` for required environment variables:
+| Variable | Required | Description |
+|----------|----------|-------------|
+| `JWT_SECRET` | Yes | Secret key for JWT tokens |
+| `OPENAI_API_KEY` | No | For AI insights |
+| `ANTHROPIC_API_KEY` | No | For AI CSV analysis |
 
-- `OPENAI_API_KEY`: (Optional) For AI-powered insights
-- `FRONTEND_URL`: Production frontend URL for CORS
-- `STORE_NET_RATE`: Store net rate for calculations (default: 0.85)
-- `SECRET_KEY`: JWT secret key (change in production!)
+## Tech Stack
 
-## API Documentation
-
-Once the backend is running, visit:
-- Swagger UI: `http://localhost:8000/docs`
-- ReDoc: `http://localhost:8000/redoc`
-
-## Authentication
-
-Default credentials:
-- Username: `admin`
-- Password: `admin123`
-
-**⚠️ Change these in production!**
-
-## Deployment
-
-See deployment guides:
-- [Quick Deploy](QUICK_DEPLOY.md)
-- [Full Deployment Guide](DEPLOYMENT.md)
-- [Render.com Deployment](render.yaml)
-
-## Scripts
-
-- `build.sh`: Build frontend and prepare for deployment
-- `run_backend.sh`: Start backend server
-- `Makefile`: Common development tasks
-
-## Documentation
-
-- [User Manual](MANUAL_DO_USUARIO.md) (Portuguese)
-- [Business Plan Documentation](DOCUMENTACAO_Business_Plan_Umatch.md)
-- [Quick Start Guide](Guia%20Rápido%20de%20Uso%20-%20Business%20Plan%20Umatch%20Automatizado.md)
-
-## Support
-
-For issues and questions, refer to the documentation files in the project root.
+- **Backend**: Python, FastAPI, Pandas, Scikit-learn
+- **Frontend**: React, TypeScript, Tailwind CSS, Recharts
+- **Deployment**: Docker, Render.com
 
 ## License
 
-Proprietary - UMatch Financial Control System
+MIT

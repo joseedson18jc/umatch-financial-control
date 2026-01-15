@@ -1,11 +1,28 @@
 import React, { useState } from 'react';
 import api from '../api';
-import { Upload, CheckCircle, AlertCircle, FileSpreadsheet, Loader2, Trash2 } from 'lucide-react';
+import { Upload, CheckCircle, AlertCircle, FileSpreadsheet, Loader2, Trash2, BarChart3, AlertTriangle } from 'lucide-react';
 import { GlassCard } from './ui/GlassCard';
 import { motion, AnimatePresence } from 'framer-motion';
 
 interface FileUploadProps {
     language: 'pt' | 'en';
+}
+
+interface ImportResult {
+    success: boolean;
+    pipeline: string;
+    format_match: string;
+    total_rows: number;
+    unique_rows: number;
+    duplicates_removed: number;
+    mapped_count: number;
+    unmapped_count: number;
+    quality_score: string;
+    plan_summary?: {
+        confidence: number;
+        template: string;
+        warnings: string[];
+    };
 }
 
 const translations = {
@@ -16,13 +33,22 @@ const translations = {
         orDrag: 'ou arraste e solte',
         fileType: 'Arquivos CSV do Conta Azul',
         processBtn: 'Processar Arquivo',
-        processing: 'Processando...',
-        success: 'Registros processados com sucesso.',
+        processing: 'Processando com v1.3 Pipeline...',
+        success: 'Importação concluída com sucesso!',
         error: 'Falha no upload:',
         serverError: 'Falha no upload: Não foi possível conectar ao servidor.',
         unknownError: 'Erro desconhecido',
         clearData: 'Limpar Todos os Dados',
-        confirmClear: 'Tem certeza que deseja apagar todos os dados?'
+        confirmClear: 'Tem certeza que deseja apagar todos os dados?',
+        stats: {
+            totalRows: 'Total de Linhas',
+            uniqueRows: 'Linhas Únicas',
+            duplicates: 'Duplicatas Removidas',
+            mapped: 'Mapeadas',
+            unmapped: 'Não Mapeadas',
+            quality: 'Qualidade',
+            formatMatch: 'Compatibilidade'
+        }
     },
     en: {
         title: 'Upload Financial Data',
@@ -31,13 +57,22 @@ const translations = {
         orDrag: 'or drag and drop',
         fileType: 'CSV files from Conta Azul',
         processBtn: 'Process File',
-        processing: 'Processing...',
-        success: 'Successfully processed records.',
+        processing: 'Processing with v1.3 Pipeline...',
+        success: 'Import completed successfully!',
         error: 'Upload failed:',
         serverError: 'Upload failed: Cannot connect to server.',
         unknownError: 'Unknown error occurred',
         clearData: 'Clear All Data',
-        confirmClear: 'Are you sure you want to clear all data?'
+        confirmClear: 'Are you sure you want to clear all data?',
+        stats: {
+            totalRows: 'Total Rows',
+            uniqueRows: 'Unique Rows',
+            duplicates: 'Duplicates Removed',
+            mapped: 'Mapped',
+            unmapped: 'Unmapped',
+            quality: 'Quality',
+            formatMatch: 'Format Match'
+        }
     }
 };
 
@@ -45,6 +80,7 @@ export default function FileUpload({ language }: FileUploadProps) {
     const [file, setFile] = useState<File | null>(null);
     const [status, setStatus] = useState<'idle' | 'uploading' | 'success' | 'error'>('idle');
     const [message, setMessage] = useState('');
+    const [importResult, setImportResult] = useState<ImportResult | null>(null);
     const t = translations[language];
 
     const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -52,6 +88,7 @@ export default function FileUpload({ language }: FileUploadProps) {
             setFile(e.target.files[0]);
             setStatus('idle');
             setMessage('');
+            setImportResult(null);
         }
     };
 
@@ -59,6 +96,7 @@ export default function FileUpload({ language }: FileUploadProps) {
         if (!file) return;
 
         setStatus('uploading');
+        setImportResult(null);
 
         try {
             // Read file as base64
@@ -76,15 +114,27 @@ export default function FileUpload({ language }: FileUploadProps) {
 
             const base64Content = await base64Promise;
 
-            // Send as JSON with base64-encoded file
-            const response = await api.post('/upload', { file: base64Content });
-            setStatus('success');
-            setMessage(`${t.success} (${response.data.rows} records)`);
+            // Use Conta Azul v1.3 import pipeline
+            const response = await api.post('/api/conta-azul/import', {
+                file: base64Content,
+                apply_mappings: true
+            });
 
-            // Refresh the page data after successful upload
-            setTimeout(() => {
-                window.location.reload();
-            }, 1500);
+            const result = response.data as ImportResult;
+            setImportResult(result);
+
+            if (result.success) {
+                setStatus('success');
+                setMessage(t.success);
+
+                // Refresh the page data after successful upload
+                setTimeout(() => {
+                    window.location.reload();
+                }, 2500);
+            } else {
+                setStatus('error');
+                setMessage(`${t.error} Pipeline validation failed`);
+            }
         } catch (error: unknown) {
             console.error('Upload error:', error);
             setStatus('error');
@@ -213,6 +263,61 @@ export default function FileUpload({ language }: FileUploadProps) {
                     <span>{t.clearData || 'Clear Data'}</span>
                 </button>
 
+                {/* Import Statistics */}
+                <AnimatePresence>
+                    {importResult && status === 'success' && (
+                        <motion.div
+                            initial={{ opacity: 0, y: 10 }}
+                            animate={{ opacity: 1, y: 0 }}
+                            exit={{ opacity: 0 }}
+                            className="mt-6 max-w-xl mx-auto"
+                        >
+                            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-4">
+                                <div className="bg-white/5 rounded-lg p-3 border border-white/10">
+                                    <div className="flex items-center gap-2 text-cyan-400 mb-1">
+                                        <BarChart3 size={14} />
+                                        <span className="text-xs">{t.stats.totalRows}</span>
+                                    </div>
+                                    <p className="text-xl font-bold text-white">{importResult.total_rows}</p>
+                                </div>
+                                <div className="bg-white/5 rounded-lg p-3 border border-white/10">
+                                    <div className="flex items-center gap-2 text-emerald-400 mb-1">
+                                        <CheckCircle size={14} />
+                                        <span className="text-xs">{t.stats.uniqueRows}</span>
+                                    </div>
+                                    <p className="text-xl font-bold text-white">{importResult.unique_rows}</p>
+                                </div>
+                                <div className="bg-white/5 rounded-lg p-3 border border-white/10">
+                                    <div className="flex items-center gap-2 text-amber-400 mb-1">
+                                        <AlertTriangle size={14} />
+                                        <span className="text-xs">{t.stats.unmapped}</span>
+                                    </div>
+                                    <p className="text-xl font-bold text-white">{importResult.unmapped_count}</p>
+                                </div>
+                                <div className="bg-white/5 rounded-lg p-3 border border-white/10">
+                                    <div className="flex items-center gap-2 text-purple-400 mb-1">
+                                        <span className="text-xs">✓</span>
+                                        <span className="text-xs">{t.stats.quality}</span>
+                                    </div>
+                                    <p className="text-xl font-bold text-white">{importResult.quality_score}</p>
+                                </div>
+                            </div>
+
+                            {/* Warnings */}
+                            {importResult.plan_summary?.warnings && importResult.plan_summary.warnings.length > 0 && (
+                                <div className="bg-amber-500/10 border border-amber-500/30 rounded-lg p-3 text-left">
+                                    <p className="text-amber-400 text-sm font-medium mb-1">Warnings:</p>
+                                    <ul className="text-amber-300 text-xs space-y-1">
+                                        {importResult.plan_summary.warnings.map((w, i) => (
+                                            <li key={i}>• {w}</li>
+                                        ))}
+                                    </ul>
+                                </div>
+                            )}
+                        </motion.div>
+                    )}
+                </AnimatePresence>
+
                 {/* Status Message */}
                 <AnimatePresence>
                     {message && (
@@ -221,7 +326,7 @@ export default function FileUpload({ language }: FileUploadProps) {
                             animate={{ opacity: 1, y: 0 }}
                             exit={{ opacity: 0 }}
                             className={`
-                                mt-6 p-4 rounded-xl flex items-center gap-4 text-sm border max-w-xl mx-auto
+                                mt-4 p-4 rounded-xl flex items-center gap-4 text-sm border max-w-xl mx-auto
                                 ${status === 'success'
                                     ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-400'
                                     : 'bg-red-500/10 border-red-500/30 text-red-400'}

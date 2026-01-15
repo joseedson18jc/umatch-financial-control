@@ -1,103 +1,71 @@
 import { useState } from 'react';
-import { LayoutDashboard, Upload, FileSpreadsheet, Settings, Menu, Globe, X } from 'lucide-react';
+import { Menu, Globe } from 'lucide-react';
 import FileUpload from './components/FileUpload';
 import Dashboard from './components/Dashboard';
-import PnLTable from './components/PnLTable';
 import MappingManager from './components/MappingManager';
+import Sidebar from './components/Sidebar';
+import AIImportWizard from './components/AIImportWizard';
+import ExecutiveDashboard from './components/ExecutiveDashboard';
+import AnomalyDashboard from './components/AnomalyDashboard';
+import TrendsDashboard from './components/TrendsDashboard';
+import DRETable from './components/DRETable';
+import CustomReports from './components/CustomReports';
+import DataQuality from './components/DataQuality';
+import Budgets from './components/Budgets';
+import ImportHistory from './components/ImportHistory';
+import ProfilePage from './components/ProfilePage';
 import { motion, AnimatePresence } from 'framer-motion';
 
 const translations = {
   pt: {
-    upload: 'Importar Dados',
-    dashboard: 'Dashboard',
-    pnl: 'DRE Gerencial',
-    mappings: 'Mapeamentos',
-    systemStatus: 'Status do Sistema',
-    online: 'Online',
     currentView: 'Visualização Atual:',
-    uploadTitle: 'Importar Dados Financeiros',
-    dashboardTitle: 'Dashboard Financeiro',
-    pnlTitle: 'Demonstrativo de Resultados',
-    mappingsTitle: 'Mapeamento de Custos',
-    uploadDesc: 'Importe seu arquivo CSV do Conta Azul para começar.',
-    dashboardDesc: 'Visão geral das suas métricas financeiras e desempenho.',
-    pnlDesc: 'Detalhamento de receitas, custos e despesas.',
-    mappingsDesc: 'Gerencie como suas despesas são categorizadas.',
-    autoSync: 'Sincronização Ativa',
-    appName: 'FinControl',
-    appTagline: 'Automação Financeira',
-    nav: {
-      upload: 'Importar',
-      dashboard: 'Dashboard',
-      pnl: 'DRE',
-      mappings: 'Mapeamentos'
+    pages: {
+      upload: { title: 'Importar Dados Financeiros', desc: 'Importe seu arquivo CSV do Conta Azul.' },
+      'importar-v2': { title: 'Importar v2 (IA)', desc: 'Importação inteligente com análise de IA.' },
+      dashboard: { title: 'Dashboard Financeiro', desc: 'Visão geral das métricas financeiras.' },
+      'dashboard-executivo': { title: 'Dashboard Executivo', desc: 'Visão otimizada para mobile.' },
+      anomalias: { title: 'Detecção de Anomalias', desc: 'Identifique transações incomuns.' },
+      tendencias: { title: 'Análise de Tendências', desc: 'Projeções e padrões sazonais.' },
+      pnl: { title: 'DRE - Demonstrativo de Resultados', desc: 'Receitas, custos e despesas.' },
+      'relatorios-personalizados': { title: 'Relatórios Personalizados', desc: 'Crie relatórios customizados.' },
+      'qualidade-dados': { title: 'Qualidade de Dados', desc: 'Métricas de validação e auditoria.' },
+      mappings: { title: 'Mapeamentos', desc: 'Configure categorização de despesas.' },
+      'mapeamentos-categorias': { title: 'Mapeamentos de Categorias', desc: 'Associe categorias às linhas do P&L.' },
+      orcamentos: { title: 'Orçamentos', desc: 'Acompanhe orçado vs realizado.' },
+      historico: { title: 'Histórico de Importações', desc: 'Veja importações anteriores.' },
+      perfil: { title: 'Meu Perfil', desc: 'Configurações da conta.' },
     }
   },
   en: {
-    upload: 'Upload Data',
-    dashboard: 'Dashboard',
-    pnl: 'P&L Statement',
-    mappings: 'Mappings',
-    systemStatus: 'System Status',
-    online: 'Online',
     currentView: 'Current View:',
-    uploadTitle: 'Upload Financial Data',
-    dashboardTitle: 'Financial Dashboard',
-    pnlTitle: 'Profit & Loss Statement',
-    mappingsTitle: 'Cost Center Mappings',
-    uploadDesc: 'Import your Conta Azul CSV export to get started.',
-    dashboardDesc: 'Overview of your key financial metrics and performance.',
-    pnlDesc: 'Detailed breakdown of revenue, costs, and expenses.',
-    mappingsDesc: 'Manage how your expenses are categorized.',
-    autoSync: 'Auto-sync Active',
-    appName: 'FinControl',
-    appTagline: 'Financial Automation',
-    nav: {
-      upload: 'Upload',
-      dashboard: 'Dashboard',
-      pnl: 'P&L',
-      mappings: 'Mappings'
+    pages: {
+      upload: { title: 'Import Financial Data', desc: 'Upload your Conta Azul CSV file.' },
+      'importar-v2': { title: 'Import v2 (AI)', desc: 'Intelligent import with AI analysis.' },
+      dashboard: { title: 'Financial Dashboard', desc: 'Overview of financial metrics.' },
+      'dashboard-executivo': { title: 'Executive Dashboard', desc: 'Mobile-optimized view.' },
+      anomalias: { title: 'Anomaly Detection', desc: 'Identify unusual transactions.' },
+      tendencias: { title: 'Trend Analysis', desc: 'Forecasts and seasonal patterns.' },
+      pnl: { title: 'P&L Statement', desc: 'Revenue, costs, and expenses.' },
+      'relatorios-personalizados': { title: 'Custom Reports', desc: 'Build custom reports.' },
+      'qualidade-dados': { title: 'Data Quality', desc: 'Validation and audit metrics.' },
+      mappings: { title: 'Mappings', desc: 'Configure expense categorization.' },
+      'mapeamentos-categorias': { title: 'Category Mappings', desc: 'Associate categories with P&L lines.' },
+      orcamentos: { title: 'Budgets', desc: 'Track budget vs actual.' },
+      historico: { title: 'Import History', desc: 'View previous imports.' },
+      perfil: { title: 'My Profile', desc: 'Account settings.' },
     }
   }
 };
 
-const NavItem = ({ id, label, icon: Icon, activeTab, onClick }: { id: string, label: string, icon: React.ElementType, activeTab: string, onClick: (id: string) => void }) => (
-  <button
-    onClick={() => onClick(id)}
-    className={`w-full flex items-center gap-3 px-4 py-3.5 rounded-xl transition-all duration-300 group relative overflow-hidden ${activeTab === id
-      ? 'text-white shadow-[0_0_20px_rgba(6,182,212,0.2)] bg-gradient-to-r from-cyan-500/10 to-blue-500/10 border border-cyan-500/20'
-      : 'text-slate-400 hover:text-white hover:bg-white/5 border border-transparent'
-      }`}
-  >
-    {activeTab === id && (
-      <motion.div
-        layoutId="activeTab"
-        className="absolute inset-0 bg-gradient-to-r from-cyan-500/10 to-blue-500/10 border border-cyan-500/20 rounded-xl"
-        initial={false}
-        transition={{ type: "spring", stiffness: 300, damping: 30 }}
-      />
-    )}
-    <div className="relative z-10 flex items-center gap-3.5">
-      <Icon size={20} className={`transition-all duration-300 ${activeTab === id ? 'text-cyan-400 scale-110 drop-shadow-[0_0_8px_rgba(6,182,212,0.5)]' : 'text-slate-500 group-hover:text-cyan-200'}`} />
-      <span className={`font-medium transition-all duration-300 ${activeTab === id ? 'tracking-wide' : ''}`}>{label}</span>
-    </div>
-    {activeTab === id && (
-      <motion.div
-        layoutId="activeIndicator"
-        className="absolute right-3 w-2 h-2 rounded-full bg-cyan-400 shadow-[0_0_10px_rgba(34,211,238,0.8)]"
-      />
-    )}
-  </button>
-);
+type PageId = keyof typeof translations.pt.pages;
 
 function App() {
-  const [activeTab, setActiveTab] = useState<'upload' | 'dashboard' | 'pnl' | 'mappings'>('upload');
+  const [activeTab, setActiveTab] = useState<PageId>('upload');
   const [language, setLanguage] = useState<'pt' | 'en'>('pt');
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
 
-  // AUTHENTICATION REMOVED - Direct access
-
   const t = translations[language];
+  const currentPage = t.pages[activeTab] || t.pages.upload;
 
   const renderContent = () => {
     switch (activeTab) {
@@ -106,15 +74,36 @@ function App() {
       case 'dashboard':
         return <Dashboard language={language} />;
       case 'pnl':
-        return <PnLTable language={language} />;
+        return <DRETable language={language} />;
       case 'mappings':
         return <MappingManager language={language} />;
+
+      // Placeholder pages for new features
+      case 'importar-v2':
+        return <AIImportWizard language={language} />;
+      case 'dashboard-executivo':
+        return <ExecutiveDashboard language={language} />;
+      case 'anomalias':
+        return <AnomalyDashboard language={language} />;
+      case 'tendencias':
+        return <TrendsDashboard language={language} />;
+      case 'relatorios-personalizados':
+        return <CustomReports language={language} />;
+      case 'qualidade-dados':
+        return <DataQuality language={language} />;
+      case 'mapeamentos-categorias':
+        return <MappingManager language={language} />;
+      case 'orcamentos':
+        return <Budgets language={language} />;
+      case 'historico':
+        return <ImportHistory language={language} />;
+      case 'perfil':
+        return <ProfilePage language={language} />;
+
       default:
         return <FileUpload language={language} />;
     }
   };
-
-
 
   return (
     <div className="flex h-screen min-h-screen-safe bg-[#0B1120] text-white overflow-hidden font-sans selection:bg-cyan-500/30 relative">
@@ -125,43 +114,13 @@ function App() {
       </div>
 
       {/* Sidebar */}
-      <aside className={`
-                fixed lg:static inset-y-0 left-0 z-50 w-80 bg-[#0f172a]/90 backdrop-blur-2xl border-r border-white/[0.08] transform transition-transform duration-500 cubic-bezier(0.16, 1, 0.3, 1) shadow-2xl lg:shadow-none
-                ${isSidebarOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'}
-            `}>
-        <div className="h-full flex flex-col">
-          <div className="p-6 border-b border-white/5">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-4">
-                <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-cyan-500 via-blue-600 to-indigo-600 flex items-center justify-center shadow-lg shadow-cyan-500/25 p-1 relative group overflow-hidden">
-                  <div className="absolute inset-0 bg-white/30 opacity-0 group-hover:opacity-100 transition-opacity mix-blend-overlay" />
-                  <img src="/logo.webp" alt="UMatch" className="w-full h-full object-contain drop-shadow-md" />
-                </div>
-                <div>
-                  <h1 className="text-2xl font-bold bg-gradient-to-r from-white to-slate-400 bg-clip-text text-transparent tracking-tight">
-                    UMatch
-                  </h1>
-                  <p className="text-[10px] text-cyan-400 font-bold tracking-widest uppercase">Financial Intelligence</p>
-                </div>
-              </div>
-              <button
-                onClick={() => setIsSidebarOpen(false)}
-                className="lg:hidden p-2 text-slate-400 hover:text-white"
-              >
-                <X size={20} />
-              </button>
-            </div>
-          </div>
-
-          <nav className="flex-1 p-4 space-y-2 overflow-y-auto scrollbar-none">
-            <NavItem id="upload" label={t.nav.upload} icon={Upload} activeTab={activeTab} onClick={(id) => { setActiveTab(id as 'upload' | 'dashboard' | 'pnl' | 'mappings'); setIsSidebarOpen(false); }} />
-            <NavItem id="dashboard" label={t.nav.dashboard} icon={LayoutDashboard} activeTab={activeTab} onClick={(id) => { setActiveTab(id as 'upload' | 'dashboard' | 'pnl' | 'mappings'); setIsSidebarOpen(false); }} />
-            <NavItem id="pnl" label={t.nav.pnl} icon={FileSpreadsheet} activeTab={activeTab} onClick={(id) => { setActiveTab(id as 'upload' | 'dashboard' | 'pnl' | 'mappings'); setIsSidebarOpen(false); }} />
-            <NavItem id="mappings" label={t.nav.mappings} icon={Settings} activeTab={activeTab} onClick={(id) => { setActiveTab(id as 'upload' | 'dashboard' | 'pnl' | 'mappings'); setIsSidebarOpen(false); }} />
-          </nav>
-
-        </div>
-      </aside>
+      <Sidebar
+        activeTab={activeTab}
+        onTabChange={(id) => setActiveTab(id as PageId)}
+        isSidebarOpen={isSidebarOpen}
+        onClose={() => setIsSidebarOpen(false)}
+        language={language}
+      />
 
       {/* Mobile Overlay */}
       <AnimatePresence>
@@ -184,6 +143,7 @@ function App() {
             <button
               onClick={() => setIsSidebarOpen(!isSidebarOpen)}
               className="lg:hidden p-2 text-slate-400 hover:text-white hover:bg-white/5 rounded-lg transition-colors"
+              aria-label="Toggle menu"
             >
               <Menu size={24} />
             </button>
@@ -191,10 +151,7 @@ function App() {
             <div className="hidden lg:flex items-center gap-3 text-sm">
               <span className="text-slate-500 font-medium">{t.currentView}</span>
               <div className="px-3 py-1 rounded-full bg-cyan-500/10 border border-cyan-500/20 text-cyan-400 font-semibold text-xs uppercase tracking-wide">
-                {activeTab === 'upload' && t.uploadTitle}
-                {activeTab === 'dashboard' && t.dashboardTitle}
-                {activeTab === 'pnl' && t.pnlTitle}
-                {activeTab === 'mappings' && t.mappingsTitle}
+                {currentPage.title}
               </div>
             </div>
           </div>
@@ -221,16 +178,10 @@ function App() {
               className="mb-8"
             >
               <h2 className="text-2xl sm:text-3xl lg:text-4xl font-bold bg-gradient-to-r from-white via-slate-200 to-slate-400 bg-clip-text text-transparent mb-2 sm:mb-3 tracking-tight">
-                {activeTab === 'upload' && t.uploadTitle}
-                {activeTab === 'dashboard' && t.dashboardTitle}
-                {activeTab === 'pnl' && t.pnlTitle}
-                {activeTab === 'mappings' && t.mappingsTitle}
+                {currentPage.title}
               </h2>
               <p className="text-slate-400 text-sm sm:text-base lg:text-lg max-w-2xl leading-relaxed">
-                {activeTab === 'upload' && t.uploadDesc}
-                {activeTab === 'dashboard' && t.dashboardDesc}
-                {activeTab === 'pnl' && t.pnlDesc}
-                {activeTab === 'mappings' && t.mappingsDesc}
+                {currentPage.desc}
               </p>
             </motion.div>
 
@@ -250,3 +201,4 @@ function App() {
 }
 
 export default App;
+

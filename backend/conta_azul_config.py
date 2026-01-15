@@ -31,37 +31,43 @@ CONTA_AZUL_CONFIG = {
     # Expected columns (Portuguese names from Conta Azul export)
     "expected_columns": [
         "Data de competência",
-        "Centro de custo", 
-        "Fornecedor/Cliente",
+        "Centro de Custo 1", 
+        "Nome do fornecedor/cliente",
         "Descrição",
-        "Valor",
-        "Tipo de operação",
-        "Categoria",
+        "Valor (R$)",
+        "Tipo da operação",
+        "Categoria 1",
     ],
     
     # Column mappings to normalized names
     "column_mapping": {
         "Data de competência": "date",
         "Data competência": "date",
+        "Data movimento": "date",
         "Data": "date",
+        "Centro de Custo 1": "cost_center",
         "Centro de custo": "cost_center",
         "Centro custo": "cost_center",
+        "Nome do fornecedor/cliente": "supplier",
         "Fornecedor/Cliente": "supplier",
         "Fornecedor": "supplier",
         "Cliente": "supplier",
         "Descrição": "description",
         "Descricao": "description",
-        "Valor": "amount",
         "Valor (R$)": "amount",
+        "Valor": "amount",
+        "Tipo da operação": "operation_type",
         "Tipo de operação": "operation_type",
         "Tipo operação": "operation_type",
         "Tipo": "operation_type",
+        "Categoria 1": "category",
         "Categoria": "category",
     },
     
     # Fingerprint for template matching
     "fingerprint_hash": "conta_azul_extrato_v1"
 }
+
 
 
 # ============================================================================
@@ -433,26 +439,26 @@ def generate_conta_azul_plan() -> Dict[str, Any]:
                 "method": "direct"
             },
             "amount": {
-                "source": "Valor",
+                "source": "Valor (R$)",
                 "method": "parse_money_ptbr",
                 "decimal": ",",
                 "thousand": ".",
                 "negative_style": "leading_minus"
             },
             "operation_type": {
-                "source": "Tipo de operação",
+                "source": "Tipo da operação",
                 "method": "direct"
             },
             "cost_center": {
-                "source": "Centro de custo",
+                "source": "Centro de Custo 1",
                 "method": "direct"
             },
             "supplier": {
-                "source": "Fornecedor/Cliente",
+                "source": "Nome do fornecedor/cliente",
                 "method": "direct"
             },
             "category": {
-                "source": "Categoria",
+                "source": "Categoria 1",
                 "method": "direct"
             },
             "currency": {

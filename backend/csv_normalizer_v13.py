@@ -827,40 +827,49 @@ def transform_row(row: Dict[str, str], plan: NormalizationPlanV13) -> Transactio
 
 def transform_csv(file_content: bytes, plan: NormalizationPlanV13) -> List[TransactionNormalized]:
     """Apply transformation to entire CSV (Phase 4)."""
+    import csv
+    import io
+    
     csv_cfg = plan.csv_read
-    encoding = csv_cfg.get('encoding', 'utf-8')
+    encoding = csv_cfg.get('encoding_hint', csv_cfg.get('encoding', 'utf-8'))
     delimiter = csv_cfg.get('delimiter', ';')
     has_header = csv_cfg.get('has_header', True)
     skip_rows = csv_cfg.get('skip_rows', 0)
     
     # Decode content
     text = file_content.decode(encoding, errors='ignore')
-    lines = text.strip().split('\n')
+    
+    # Use proper CSV reader for quoted fields
+    reader = csv.reader(io.StringIO(text), delimiter=delimiter)
     
     # Skip rows if needed
-    lines = lines[skip_rows:]
+    for _ in range(skip_rows):
+        try:
+            next(reader)
+        except StopIteration:
+            break
     
-    # Get columns
-    if has_header and lines:
-        columns = [c.strip().strip('"') for c in lines[0].split(delimiter)]
-        data_lines = lines[1:]
-    else:
-        # Generate column names
-        if lines:
-            first_values = lines[0].split(delimiter)
-            columns = [f"col_{i}" for i in range(len(first_values))]
+    # Get columns from header
+    try:
+        if has_header:
+            columns = [c.strip() for c in next(reader)]
         else:
-            columns = []
-        data_lines = lines
+            # Read first row to determine column count
+            first_row = next(reader)
+            columns = [f"col_{i}" for i in range(len(first_row))]
+            # Reset reader to include this row in data
+            text_after_skip = '\n'.join(text.strip().split('\n')[skip_rows:])
+            reader = csv.reader(io.StringIO(text_after_skip), delimiter=delimiter)
+    except StopIteration:
+        return []
     
     # Transform each row
     transactions = []
-    for idx, line in enumerate(data_lines):
-        values = [v.strip().strip('"') for v in line.split(delimiter)]
+    for idx, values in enumerate(reader):
         if len(values) != len(columns):
             continue
         
-        row_dict = dict(zip(columns, values))
+        row_dict = dict(zip(columns, [v.strip() for v in values]))
         tx = transform_row(row_dict, plan)
         tx.original_row = idx + 1 + skip_rows + (1 if has_header else 0)
         
@@ -871,6 +880,8 @@ def transform_csv(file_content: bytes, plan: NormalizationPlanV13) -> List[Trans
         transactions.append(tx)
     
     return transactions
+
+
 
 
 # ============================================================================

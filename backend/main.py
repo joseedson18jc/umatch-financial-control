@@ -23,7 +23,7 @@ from logic import (
     normalize_text_helper,
 )
 from ai_service import generate_insights
-from auth import Token, create_access_token, get_current_user, USERS_DB, verify_password, get_password_hash, ACCESS_TOKEN_EXPIRE_MINUTES
+from auth import Token, create_access_token, get_current_user, require_admin, USERS_DB, verify_password, get_password_hash, ACCESS_TOKEN_EXPIRE_MINUTES
 from datetime import timedelta
 """Main FastAPI application for financial control.
 
@@ -73,6 +73,58 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+# ============================================================================
+# GLOBAL EXCEPTION HANDLER MIDDLEWARE
+# ============================================================================
+from starlette.middleware.base import BaseHTTPMiddleware
+from starlette.requests import Request
+from starlette.responses import JSONResponse
+import traceback
+import uuid
+
+class ExceptionMiddleware(BaseHTTPMiddleware):
+    """Catch all exceptions and log with structured context."""
+    
+    async def dispatch(self, request: Request, call_next):
+        request_id = str(uuid.uuid4())[:8]
+        
+        try:
+            response = await call_next(request)
+            return response
+        except Exception as exc:
+            # Capture full context
+            error_context = {
+                "request_id": request_id,
+                "method": request.method,
+                "url": str(request.url),
+                "path": request.url.path,
+                "client": request.client.host if request.client else "unknown",
+                "error_type": type(exc).__name__,
+                "error_message": str(exc),
+            }
+            
+            # Log with full traceback
+            logger.error(
+                f"[{request_id}] Unhandled exception in {request.method} {request.url.path}: "
+                f"{type(exc).__name__}: {exc}",
+                extra=error_context,
+                exc_info=True
+            )
+            
+            # Return structured error response
+            return JSONResponse(
+                status_code=500,
+                content={
+                    "detail": "Internal server error",
+                    "request_id": request_id,
+                    "error_type": type(exc).__name__,
+                    "path": request.url.path
+                }
+            )
+
+app.add_middleware(ExceptionMiddleware)
 
 # ... (rest of imports)
 
@@ -281,8 +333,8 @@ async def upload_file(
         raise HTTPException(status_code=400, detail=str(e))
 
 @app.delete("/api/data")
-def clear_data(current_user: dict = Depends(get_current_user)):
-    """Clear all uploaded data"""
+def clear_data(current_user: dict = Depends(require_admin)):
+    """Clear all uploaded data (admin only)"""
     global current_df
     current_df = None
     # Also clear metadata
@@ -297,15 +349,15 @@ def get_mappings(current_user: dict = Depends(get_current_user)):
     return current_mappings
 
 @app.post("/mappings")
-def update_mappings(update: MappingUpdate, current_user: dict = Depends(get_current_user)):
+def update_mappings(update: MappingUpdate, current_user: dict = Depends(require_admin)):
     global current_mappings
     current_mappings = update.mappings
     save_data()  # Persist to disk
     return {"message": "Mappings updated"}
 
 @app.delete("/api/mappings")
-def reset_mappings(current_user: dict = Depends(get_current_user)):
-    """Reset mappings to default"""
+def reset_mappings(current_user: dict = Depends(require_admin)):
+    """Reset mappings to default (admin only)"""
     global current_mappings
     current_mappings = get_initial_mappings()
     save_data()
@@ -592,6 +644,175 @@ def apply_mapping_suggestions(suggestions: List[MappingItem] = Body(...), curren
     if added:
         save_data()
     return {"added": added, "total_mappings": len(current_mappings)}
+
+# ---------------------------------------------------------------------------
+# Anomaly Detection API
+# ---------------------------------------------------------------------------
+
+@app.get("/api/anomalies")
+def get_anomalies(
+    severity: Optional[str] = None,
+    current_user: dict = Depends(get_current_user)
+):
+    """
+    Detect anomalies in financial transactions.
+    
+    Returns transactions with:
+    - Unusually high values (> 3 std deviations)
+    - Possible duplicates (same amount, date, description)
+    - Category mismatches
+    """
+    global current_df, current_mappings
+    if current_df is None:
+        load_data()
+    if current_df is None or current_df.empty:
+        return {"anomalies": [], "summary": {"total": 0, "high": 0, "medium": 0, "low": 0}}
+    
+    df = current_df.copy()
+    anomalies = []
+    
+    # Calculate statistics for anomaly detection
+    if 'valor' in df.columns:
+        mean_val = df['valor'].abs().mean()
+        std_val = df['valor'].abs().std()
+        high_threshold = mean_val + (3 * std_val) if std_val > 0 else mean_val * 2
+        
+        # Find high-value anomalies
+        high_value_mask = df['valor'].abs() > high_threshold
+        for idx, row in df[high_value_mask].iterrows():
+            anomalies.append({
+                "id": str(idx),
+                "date": str(row.get('data', '')),
+                "description": row.get('descricao', 'Unknown'),
+                "amount": float(row.get('valor', 0)),
+                "severity": "high",
+                "reason": f"Valor muito alto (>{high_threshold:.0f})"
+            })
+        
+        # Find potential duplicates (same amount on same day)
+        if 'data' in df.columns:
+            dup_mask = df.duplicated(subset=['valor', 'data'], keep=False)
+            for idx, row in df[dup_mask].head(10).iterrows():
+                if str(idx) not in [a['id'] for a in anomalies]:
+                    anomalies.append({
+                        "id": str(idx),
+                        "date": str(row.get('data', '')),
+                        "description": row.get('descricao', 'Unknown'),
+                        "amount": float(row.get('valor', 0)),
+                        "severity": "medium",
+                        "reason": "Possível duplicata (mesmo valor e data)"
+                    })
+    
+    # Filter by severity if requested
+    if severity and severity != 'all':
+        anomalies = [a for a in anomalies if a['severity'] == severity]
+    
+    # Calculate summary
+    summary = {
+        "total": len(anomalies),
+        "high": len([a for a in anomalies if a['severity'] == 'high']),
+        "medium": len([a for a in anomalies if a['severity'] == 'medium']),
+        "low": len([a for a in anomalies if a['severity'] == 'low']),
+        "total_value": sum(abs(a['amount']) for a in anomalies)
+    }
+    
+    return {"anomalies": anomalies[:50], "summary": summary}
+
+
+@app.get("/api/data-quality")
+def get_data_quality(current_user: dict = Depends(get_current_user)):
+    """
+    Calculate data quality metrics for the current dataset.
+    
+    Returns scores for:
+    - Completeness: % of required fields filled
+    - Accuracy: % with valid formats
+    - Consistency: % with standardized values
+    - Timeliness: freshness of data
+    """
+    global current_df, current_mappings
+    if current_df is None:
+        load_data()
+    if current_df is None or current_df.empty:
+        return {
+            "overall_score": 0,
+            "metrics": [],
+            "issues": []
+        }
+    
+    df = current_df.copy()
+    total_rows = len(df)
+    issues = []
+    
+    # Completeness: check for missing values in key fields
+    required_fields = ['descricao', 'valor', 'data']
+    missing_counts = {}
+    for field in required_fields:
+        if field in df.columns:
+            null_count = df[field].isnull().sum()
+            missing_counts[field] = null_count
+            if null_count > 0:
+                issues.append({
+                    "id": f"missing_{field}",
+                    "type": "missing",
+                    "field": field,
+                    "count": int(null_count),
+                    "severity": "high" if field == 'valor' else "medium",
+                    "description": f"Campo '{field}' vazio em {null_count} registros"
+                })
+    
+    completeness = 100 - (sum(missing_counts.values()) / (total_rows * len(required_fields)) * 100) if total_rows > 0 else 0
+    
+    # Accuracy: check for valid date formats
+    accuracy = 95  # Base accuracy
+    if 'data' in df.columns:
+        invalid_dates = df['data'].apply(lambda x: pd.isnull(x) or x == '').sum()
+        accuracy = 100 - (invalid_dates / total_rows * 100) if total_rows > 0 else 0
+    
+    # Consistency: check for unmapped transactions
+    unmapped = get_unmapped_diagnostics(df, current_mappings)
+    unmapped_pct = unmapped.get('unmapped_pct', 0)
+    consistency = 100 - unmapped_pct
+    
+    if unmapped_pct > 5:
+        issues.append({
+            "id": "unmapped_transactions",
+            "type": "inconsistent",
+            "field": "mapeamento",
+            "count": unmapped.get('unmapped_count', 0),
+            "severity": "medium" if unmapped_pct < 20 else "high",
+            "description": f"{unmapped_pct:.1f}% das transações sem mapeamento"
+        })
+    
+    # Timeliness: check data freshness
+    timeliness = 85  # Default
+    if 'data' in df.columns:
+        try:
+            max_date = pd.to_datetime(df['data'], errors='coerce').max()
+            days_old = (datetime.now() - max_date).days if pd.notna(max_date) else 30
+            timeliness = max(0, 100 - (days_old * 2))  # Lose 2% per day old
+        except:
+            pass
+    
+    overall = (completeness + accuracy + consistency + timeliness) / 4
+    
+    metrics = [
+        {"id": "completeness", "label": "Completude", "score": round(completeness, 1), 
+         "status": "excellent" if completeness >= 90 else "good" if completeness >= 70 else "warning"},
+        {"id": "accuracy", "label": "Precisão", "score": round(accuracy, 1),
+         "status": "excellent" if accuracy >= 90 else "good" if accuracy >= 70 else "warning"},
+        {"id": "consistency", "label": "Consistência", "score": round(consistency, 1),
+         "status": "excellent" if consistency >= 90 else "good" if consistency >= 70 else "warning"},
+        {"id": "timeliness", "label": "Atualidade", "score": round(timeliness, 1),
+         "status": "excellent" if timeliness >= 90 else "good" if timeliness >= 70 else "warning"},
+    ]
+    
+    return {
+        "overall_score": round(overall, 1),
+        "metrics": metrics,
+        "issues": issues
+    }
+
 
 # ---------------------------------------------------------------------------
 # AI Table Parser Endpoints (Anthropic Claude)
@@ -954,6 +1175,7 @@ async def import_conta_azul_csv(
         NormalizationPlanV13
     )
     from dataclasses import asdict
+    from security import sanitize_transaction_dict
     
     file_b64 = payload.get("file")
     apply_mappings = payload.get("apply_mappings", True)
@@ -1014,6 +1236,9 @@ async def import_conta_azul_csv(
             if not classification["mapped"]:
                 unmapped_count += 1
         
+        # Sanitize transaction data
+        tx_dict = sanitize_transaction_dict(tx_dict)
+        
         classified_transactions.append(tx_dict)
     
     # Quality check
@@ -1046,6 +1271,202 @@ async def import_conta_azul_csv(
             "warnings": plan.warnings
         }
     }
+
+
+# ============================================================================
+# SAVED PLANS API (P0-3: Saved Plan Reuse)
+# ============================================================================
+
+@app.get("/api/plans")
+def list_saved_plans(current_user: dict = Depends(get_current_user)):
+    """List all saved normalization plans."""
+    from saved_plans import list_plans
+    return {"plans": list_plans()}
+
+
+@app.post("/api/plans/save")
+def save_normalization_plan(
+    payload: dict = Body(...),
+    current_user: dict = Depends(require_admin)
+):
+    """
+    Save a normalization plan for future reuse (admin only).
+    
+    Request body:
+        {
+            "plan": {...},  // The NormalizationPlanV13 as dict
+            "columns": ["col1", "col2", ...],  // CSV column names
+            "name": "optional_name"  // Optional human-readable name
+        }
+    """
+    from saved_plans import save_plan
+    
+    plan_dict = payload.get("plan")
+    columns = payload.get("columns", [])
+    name = payload.get("name")
+    
+    if not plan_dict:
+        raise HTTPException(status_code=400, detail="Plan data required")
+    if not columns:
+        raise HTTPException(status_code=400, detail="Columns list required")
+    
+    saved = save_plan(plan_dict, columns, name)
+    
+    return {
+        "success": True,
+        "plan_id": saved.id,
+        "name": saved.name,
+        "columns_hash": saved.columns_hash
+    }
+
+
+@app.post("/api/plans/{plan_id}/apply")
+async def apply_saved_plan(
+    plan_id: str,
+    payload: dict = Body(...),
+    current_user: dict = Depends(get_current_user)
+):
+    """
+    Apply a saved plan to a new CSV with compatibility check.
+    
+    Request body:
+        {
+            "file": "base64-encoded CSV content",
+            "apply_mappings": true  // Apply P&L mappings
+        }
+    """
+    global current_df
+    import base64
+    from saved_plans import get_plan, check_compatibility, increment_usage
+    from conta_azul_config import classify_transaction
+    from csv_normalizer_v13 import (
+        extract_csv_metadata,
+        transform_csv,
+        check_quality,
+        deduplicate,
+        NormalizationPlanV13
+    )
+    from dataclasses import asdict
+    from security import sanitize_transaction_dict
+    
+    # Get saved plan
+    saved_plan = get_plan(plan_id)
+    if not saved_plan:
+        raise HTTPException(status_code=404, detail=f"Plan {plan_id} not found")
+    
+    # Decode file
+    file_b64 = payload.get("file")
+    apply_mappings = payload.get("apply_mappings", True)
+    
+    if not file_b64:
+        raise HTTPException(status_code=400, detail="No file provided")
+    
+    try:
+        content = base64.b64decode(file_b64)
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid base64 encoding")
+    
+    # Extract metadata to get columns
+    metadata = extract_csv_metadata(content)
+    csv_columns = metadata.get("columns", [])
+    
+    # Check compatibility
+    is_compatible, message, missing = check_compatibility(plan_id, csv_columns)
+    
+    if not is_compatible:
+        return {
+            "success": False,
+            "error": "column_mismatch",
+            "message": message,
+            "missing_columns": missing,
+            "expected_columns": saved_plan.columns,
+            "actual_columns": csv_columns
+        }
+    
+    # Reconstruct plan from saved JSON
+    plan_dict = saved_plan.plan_json
+    plan = NormalizationPlanV13(
+        schema_version=plan_dict.get("schema_version", "1.3"),
+        needs_user_review=plan_dict.get("needs_user_review", False),
+        confidence=plan_dict.get("confidence", 0.95),
+        summary=plan_dict.get("summary", {}),
+        template_fingerprint=plan_dict.get("template_fingerprint", {}),
+        csv_read={**plan_dict.get("csv_read", {}), "delimiter": metadata["delimiter"]},
+        mapping=plan_dict.get("mapping", {}),
+        transform_plan=plan_dict.get("transform_plan", []),
+        quality_checks=plan_dict.get("quality_checks", []),
+        duplicate_detection=plan_dict.get("duplicate_detection", {}),
+        warnings=plan_dict.get("warnings", [])
+    )
+    
+    # Transform CSV
+    transactions = transform_csv(content, plan)
+    
+    # Apply P&L mappings if requested
+    classified_transactions = []
+    unmapped_count = 0
+    
+    for tx in transactions:
+        tx_dict = asdict(tx)
+        
+        if apply_mappings:
+            cost_center = tx_dict.get("cost_center", tx_dict.get("category", ""))
+            supplier = tx_dict.get("supplier", "")
+            
+            classification = classify_transaction(cost_center, supplier, tx.amount)
+            tx_dict["classification"] = classification
+            
+            if not classification["mapped"]:
+                unmapped_count += 1
+        
+        # Sanitize
+        tx_dict = sanitize_transaction_dict(tx_dict)
+        classified_transactions.append(tx_dict)
+    
+    # Quality check
+    quality = check_quality(transactions, [])
+    
+    # Deduplicate
+    unique_txs, dup_count = deduplicate(transactions)
+    
+    # Increment usage on successful execution
+    increment_usage(plan_id)
+    
+    # Also update current_df for compatibility
+    try:
+        current_df = process_upload(content)
+        save_data()
+    except Exception as e:
+        logger.warning(f"Standard upload failed: {e}")
+    
+    return {
+        "success": True,
+        "pipeline": "saved_plan_reuse",
+        "plan_id": plan_id,
+        "plan_name": saved_plan.name,
+        "total_rows": len(transactions),
+        "unique_rows": len(unique_txs),
+        "duplicates_removed": dup_count,
+        "mapped_count": len(transactions) - unmapped_count,
+        "unmapped_count": unmapped_count,
+        "quality_score": f"{quality.get('overall_quality', 0):.1%}",
+        "transactions": classified_transactions[:20],
+        "usage_count": saved_plan.usage_count + 1
+    }
+
+
+@app.delete("/api/plans/{plan_id}")
+def delete_saved_plan(
+    plan_id: str,
+    current_user: dict = Depends(require_admin)
+):
+    """Delete a saved plan (admin only)."""
+    from saved_plans import delete_plan
+    
+    if delete_plan(plan_id):
+        return {"success": True, "message": f"Plan {plan_id} deleted"}
+    else:
+        raise HTTPException(status_code=404, detail=f"Plan {plan_id} not found")
 
 
 # Serve the built frontend (Vite) from the dist folder

@@ -1,14 +1,26 @@
+# Render.com Blueprint
+# Deploy with: https://render.com/deploy
+
 services:
-  # Unified Backend + Frontend Service
   - type: web
-    name: umatch-financial-control
+    name: umatch-financial
     runtime: docker
-    plan: free
     dockerfilePath: ./Dockerfile
+    dockerContext: .
     envVars:
+      - key: JWT_SECRET
+        generateValue: true
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: ANTHROPIC_API_KEY
+        sync: false
       - key: PORT
         value: 8000
-      - key: SECRET_KEY
-        value: umatch-secret-key-change-in-production-12345
-      - key: PYTHON_VERSION
-        value: 3.9
+      - key: PYTHONUNBUFFERED
+        value: 1
+    disk:
+      name: umatch-data
+      mountPath: /app/data
+      sizeGB: 1
+    healthCheckPath: /api/health
+    autoDeploy: true
